@@ -24,11 +24,11 @@ try {
     $label.Text = $env:ANYDIALOG_LABEL
     $null = $form.Controls.Add($label)
 
-    $input = New-Object System.Windows.Forms.TextBox
-    $input.Location = New-Object System.Drawing.Point(12, 48)
-    $input.Size = New-Object System.Drawing.Size(376, 23)
-    $input.Text = $env:ANYDIALOG_INITIAL
-    $null = $form.Controls.Add($input)
+    $inputBox = New-Object System.Windows.Forms.TextBox
+    $inputBox.Location = New-Object System.Drawing.Point(12, 48)
+    $inputBox.Size = New-Object System.Drawing.Size(376, 23)
+    $inputBox.Text = $env:ANYDIALOG_INITIAL
+    $null = $form.Controls.Add($inputBox)
 
     $okButton = New-Object System.Windows.Forms.Button
     $okButton.Location = New-Object System.Drawing.Point(232, 92)
@@ -46,11 +46,11 @@ try {
 
     $form.AcceptButton = $okButton
     $form.CancelButton = $cancelButton
-    $form.ActiveControl = $input
-    $input.SelectAll()
+    $form.ActiveControl = $inputBox
+    $inputBox.SelectAll()
 
     if ($form.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        [Console]::Out.WriteLine($input.Text)
+        [Console]::Out.WriteLine($inputBox.Text)
         exit 0
     }
     exit 1
