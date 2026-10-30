@@ -4,7 +4,7 @@
 //! The shared vocabulary it renders lives in [`crate::request`], and
 //! what counts as an answer or a cancel lives in [`crate::outcome`].
 
-use crate::request::{Level, Request};
+use crate::request::{FileFilter, Level, Request};
 
 /// The helper program's name, as probed for on `PATH`.
 pub(crate) const PROGRAM: &str = "kdialog";
@@ -123,6 +123,79 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
             "--yesno".to_string(),
             message.to_string(),
         ],
+        Request::OpenFile {
+            title,
+            start,
+            filters,
+            multiple,
+        } => {
+            let mut args = vec!["--title".to_string(), title.to_string()];
+            args.push("--getopenfilename".to_string());
+            if multiple {
+                args.push("--multiple".to_string());
+                args.push("--separate-output".to_string());
+            }
+            push_start_and_filter(&mut args, start, filters);
+            args
+        }
+        Request::SaveFile {
+            title,
+            start,
+            filters,
+        } => {
+            let mut args = vec![
+                "--title".to_string(),
+                title.to_string(),
+                "--getsavefilename".to_string(),
+            ];
+            push_start_and_filter(&mut args, start, filters);
+            args
+        }
+        Request::Folder { title, start } => {
+            let mut args = vec![
+                "--title".to_string(),
+                title.to_string(),
+                "--getexistingdirectory".to_string(),
+            ];
+            if let Some(start) = start {
+                args.push(super::path_text(start));
+            }
+            args
+        }
+    }
+}
+
+/// The file dialogs take their starting path and filter as
+/// positionals, the filter after the path, so a filter without a
+/// start still needs a path in front of it: the current directory
+/// stands in. The filter itself is KDE's format, one
+/// `patterns|name` entry per filter, newline-separated.
+fn push_start_and_filter(
+    args: &mut Vec<String>,
+    start: Option<&std::path::Path>,
+    filters: &[FileFilter<'_>],
+) {
+    if start.is_none() && filters.is_empty() {
+        return;
+    }
+    args.push(
+        start
+            .map(super::path_text)
+            .unwrap_or_else(|| ".".to_string()),
+    );
+    if !filters.is_empty() {
+        let entries: Vec<String> = filters
+            .iter()
+            .map(|filter| {
+                let patterns: Vec<String> = filter
+                    .extensions
+                    .iter()
+                    .map(|extension| format!("*.{extension}"))
+                    .collect();
+                format!("{}|{}", patterns.join(" "), filter.name)
+            })
+            .collect();
+        args.push(entries.join("\n"));
     }
 }
 
@@ -260,6 +333,84 @@ mod tests {
             initial: Some("#ff0080"),
         };
         assert_eq!(argv(&request), args(&["--title", "Title", "--getcolor"]));
+    }
+
+    #[test]
+    fn open_file_argv_with_start_and_filter() {
+        let filters = [FileFilter {
+            name: "Images",
+            extensions: &["png", "jpg"],
+        }];
+        let request = Request::OpenFile {
+            title: "Title",
+            start: Some(std::path::Path::new("/home/user")),
+            filters: &filters,
+            multiple: false,
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "--title",
+                "Title",
+                "--getopenfilename",
+                "/home/user",
+                "*.png *.jpg|Images",
+            ])
+        );
+    }
+
+    #[test]
+    fn open_files_argv_is_multiple_with_separate_output() {
+        let request = Request::OpenFile {
+            title: "Title",
+            start: None,
+            filters: &[],
+            multiple: true,
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "--title",
+                "Title",
+                "--getopenfilename",
+                "--multiple",
+                "--separate-output",
+            ])
+        );
+    }
+
+    #[test]
+    fn save_file_argv_uses_a_placeholder_start_for_a_filter() {
+        let filters = [FileFilter {
+            name: "Text",
+            extensions: &["txt"],
+        }];
+        let request = Request::SaveFile {
+            title: "Title",
+            start: None,
+            filters: &filters,
+        };
+        assert_eq!(
+            argv(&request),
+            args(&["--title", "Title", "--getsavefilename", ".", "*.txt|Text"])
+        );
+    }
+
+    #[test]
+    fn folder_argv() {
+        let request = Request::Folder {
+            title: "Title",
+            start: Some(std::path::Path::new("/home/user/docs")),
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "--title",
+                "Title",
+                "--getexistingdirectory",
+                "/home/user/docs",
+            ])
+        );
     }
 
     #[test]

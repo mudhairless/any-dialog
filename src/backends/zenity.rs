@@ -4,7 +4,7 @@
 //! The shared vocabulary it renders lives in [`crate::request`], and
 //! what counts as an answer or a cancel lives in [`crate::outcome`].
 
-use crate::request::{Level, Request};
+use crate::request::{FileFilter, Level, Request};
 
 /// The helper program's name, as probed for on `PATH`.
 pub(crate) const PROGRAM: &str = "zenity";
@@ -143,6 +143,72 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
             "--text".to_string(),
             message.to_string(),
         ],
+        Request::OpenFile {
+            title,
+            start,
+            filters,
+            multiple,
+        } => {
+            let mut args = file_selection_head(title);
+            if multiple {
+                args.push("--multiple".to_string());
+                args.push("--separator".to_string());
+                args.push("\n".to_string());
+            }
+            push_filename_and_filters(&mut args, start, filters);
+            args
+        }
+        Request::SaveFile {
+            title,
+            start,
+            filters,
+        } => {
+            let mut args = file_selection_head(title);
+            args.push("--save".to_string());
+            args.push("--confirm-overwrite".to_string());
+            push_filename_and_filters(&mut args, start, filters);
+            args
+        }
+        Request::Folder { title, start } => {
+            let mut args = file_selection_head(title);
+            args.push("--directory".to_string());
+            if let Some(start) = start {
+                args.push("--filename".to_string());
+                args.push(super::path_text(start));
+            }
+            args
+        }
+    }
+}
+
+fn file_selection_head(title: &str) -> Vec<String> {
+    vec![
+        "--file-selection".to_string(),
+        "--title".to_string(),
+        title.to_string(),
+    ]
+}
+
+/// The starting path travels as `--filename`, and each filter as
+/// its own `--file-filter` in zenity's `name | patterns` form.
+/// Zenity adds an all-files entry itself.
+fn push_filename_and_filters(
+    args: &mut Vec<String>,
+    start: Option<&std::path::Path>,
+    filters: &[FileFilter<'_>],
+) {
+    if let Some(start) = start {
+        args.push("--filename".to_string());
+        args.push(super::path_text(start));
+    }
+    for filter in filters {
+        let patterns: Vec<String> = filter
+            .extensions
+            .iter()
+            .map(|extension| format!("*.{extension}"))
+            .collect();
+        args.push("--file-filter".to_string());
+        args.push(format!("{} | {}", filter.name, patterns.join(" ")));
     }
 }
 
@@ -307,6 +373,86 @@ mod tests {
         assert_eq!(
             argv(&without_initial),
             args(&["--color-selection", "--title", "Title"])
+        );
+    }
+
+    #[test]
+    fn open_file_argv_with_start_and_filter() {
+        let filters = [FileFilter {
+            name: "Images",
+            extensions: &["png", "jpg"],
+        }];
+        let request = Request::OpenFile {
+            title: "Title",
+            start: Some(std::path::Path::new("/home/user")),
+            filters: &filters,
+            multiple: false,
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "--file-selection",
+                "--title",
+                "Title",
+                "--filename",
+                "/home/user",
+                "--file-filter",
+                "Images | *.png *.jpg",
+            ])
+        );
+    }
+
+    #[test]
+    fn open_files_argv_is_multiple_with_newline_separator() {
+        let request = Request::OpenFile {
+            title: "Title",
+            start: None,
+            filters: &[],
+            multiple: true,
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "--file-selection",
+                "--title",
+                "Title",
+                "--multiple",
+                "--separator",
+                "\n",
+            ])
+        );
+    }
+
+    #[test]
+    fn save_file_argv_confirms_overwrite() {
+        let request = Request::SaveFile {
+            title: "Title",
+            start: Some(std::path::Path::new("/home/user/out.txt")),
+            filters: &[],
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "--file-selection",
+                "--title",
+                "Title",
+                "--save",
+                "--confirm-overwrite",
+                "--filename",
+                "/home/user/out.txt",
+            ])
+        );
+    }
+
+    #[test]
+    fn folder_argv() {
+        let request = Request::Folder {
+            title: "Title",
+            start: None,
+        };
+        assert_eq!(
+            argv(&request),
+            args(&["--file-selection", "--title", "Title", "--directory"])
         );
     }
 

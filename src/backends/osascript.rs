@@ -115,6 +115,82 @@ const COLOR_SCRIPT: &[&str] = &[
     "end run",
 ];
 
+/// The file choosers take a prompt, not a title, so the request's
+/// title is the prompt text here. The argument layout is prompt,
+/// start path (empty for none), an extension count, then that
+/// many extensions: every named filter's extensions merged into
+/// one flat list, because `choose file`'s `of type` is the only
+/// filtering the chooser has. AppleScript cannot leave a clause
+/// out conditionally, so each combination gets its own line and
+/// exactly one of them runs. Cancelling raises -128.
+const OPEN_FILE_SCRIPT: &[&str] = &[
+    "on run argv",
+    "set n to (item 3 of argv) as integer",
+    "set types to {}",
+    "if n > 0 then set types to items 4 thru (3 + n) of argv",
+    "if (item 2 of argv) is \"\" and n = 0 then set pick to choose file with prompt (item 1 of argv)",
+    "if (item 2 of argv) is \"\" and n > 0 then set pick to choose file with prompt (item 1 of argv) of type types",
+    "if (item 2 of argv) is not \"\" and n = 0 then set pick to choose file with prompt (item 1 of argv) default location (POSIX file (item 2 of argv))",
+    "if (item 2 of argv) is not \"\" and n > 0 then set pick to choose file with prompt (item 1 of argv) default location (POSIX file (item 2 of argv)) of type types",
+    "return POSIX path of pick",
+    "end run",
+];
+
+const OPEN_FILES_SCRIPT: &[&str] = &[
+    "on run argv",
+    "set n to (item 3 of argv) as integer",
+    "set types to {}",
+    "if n > 0 then set types to items 4 thru (3 + n) of argv",
+    "if (item 2 of argv) is \"\" and n = 0 then set picks to choose file with prompt (item 1 of argv) with multiple selections allowed",
+    "if (item 2 of argv) is \"\" and n > 0 then set picks to choose file with prompt (item 1 of argv) of type types with multiple selections allowed",
+    "if (item 2 of argv) is not \"\" and n = 0 then set picks to choose file with prompt (item 1 of argv) default location (POSIX file (item 2 of argv)) with multiple selections allowed",
+    "if (item 2 of argv) is not \"\" and n > 0 then set picks to choose file with prompt (item 1 of argv) default location (POSIX file (item 2 of argv)) of type types with multiple selections allowed",
+    "set out to {}",
+    "repeat with p in picks",
+    "set end of out to POSIX path of p",
+    "end repeat",
+    "set AppleScript's text item delimiters to linefeed",
+    "return out as string",
+    "end run",
+];
+
+/// The arguments are prompt, folder, and file name: the crate
+/// splits the suggested path in two (see `split_start`) because
+/// splitting it in AppleScript would be miserable. `choose file
+/// name` has no type filter, so save filters do not reach this
+/// backend.
+const SAVE_FILE_SCRIPT: &[&str] = &[
+    "on run argv",
+    "if (item 3 of argv) is \"\" then set pick to choose file name with prompt (item 1 of argv)",
+    "if (item 3 of argv) is not \"\" and (item 2 of argv) is \"\" then set pick to choose file name with prompt (item 1 of argv) default name (item 3 of argv)",
+    "if (item 3 of argv) is not \"\" and (item 2 of argv) is not \"\" then set pick to choose file name with prompt (item 1 of argv) default name (item 3 of argv) default location (POSIX file (item 2 of argv))",
+    "return POSIX path of pick",
+    "end run",
+];
+
+const FOLDER_SCRIPT: &[&str] = &[
+    "on run argv",
+    "if (item 2 of argv) is \"\" then set pick to choose folder with prompt (item 1 of argv)",
+    "if (item 2 of argv) is not \"\" then set pick to choose folder with prompt (item 1 of argv) default location (POSIX file (item 2 of argv))",
+    "return POSIX path of pick",
+    "end run",
+];
+
+/// Split a save dialog's start path into the (folder, file name)
+/// text pair SAVE_FILE_SCRIPT takes. Neither piece exists when
+/// there is no start; a bare file name leaves the folder empty.
+fn split_start(start: Option<&std::path::Path>) -> (String, String) {
+    let Some(start) = start else {
+        return (String::new(), String::new());
+    };
+    let dir = start.parent().map(super::path_text).unwrap_or_default();
+    let name = start
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    (dir, name)
+}
+
 /// A `#rrggbb` initial color as the three 16-bit component
 /// strings `choose color` wants. Missing or unparsable input
 /// falls back to white.
@@ -200,6 +276,43 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
         Request::Color { title: _, initial } => (
             COLOR_SCRIPT,
             color_components(initial).into_iter().collect(),
+        ),
+        Request::OpenFile {
+            title,
+            start,
+            filters,
+            multiple,
+        } => {
+            let extensions: Vec<&str> = filters
+                .iter()
+                .flat_map(|filter| filter.extensions.iter().copied())
+                .collect();
+            let mut data = vec![
+                title.to_string(),
+                start.map(super::path_text).unwrap_or_default(),
+                extensions.len().to_string(),
+            ];
+            data.extend(extensions.iter().map(|extension| (*extension).to_string()));
+            if multiple {
+                (OPEN_FILES_SCRIPT, data)
+            } else {
+                (OPEN_FILE_SCRIPT, data)
+            }
+        }
+        Request::SaveFile {
+            title,
+            start,
+            filters: _,
+        } => {
+            let (dir, name) = split_start(start);
+            (SAVE_FILE_SCRIPT, vec![title.to_string(), dir, name])
+        }
+        Request::Folder { title, start } => (
+            FOLDER_SCRIPT,
+            vec![
+                title.to_string(),
+                start.map(super::path_text).unwrap_or_default(),
+            ],
         ),
     };
 
@@ -408,6 +521,79 @@ mod tests {
             &argv[argv.len() - 3..],
             args(&["65535", "65535", "65535"]).as_slice()
         );
+    }
+
+    #[test]
+    fn osascript_open_file_argv_merges_filter_extensions() {
+        let filters = [
+            crate::request::FileFilter {
+                name: "Images",
+                extensions: &["png", "jpg"],
+            },
+            crate::request::FileFilter {
+                name: "Text",
+                extensions: &["txt"],
+            },
+        ];
+        let request = Request::OpenFile {
+            title: "Title",
+            start: Some(std::path::Path::new("/home/user")),
+            filters: &filters,
+            multiple: false,
+        };
+        let single = argv(&request);
+        assert_eq!(
+            &single[single.len() - 6..],
+            args(&["Title", "/home/user", "3", "png", "jpg", "txt"]).as_slice()
+        );
+
+        let multiple = Request::OpenFile {
+            title: "Title",
+            start: None,
+            filters: &[],
+            multiple: true,
+        };
+        let multi = argv(&multiple);
+        assert_eq!(
+            &multi[multi.len() - 3..],
+            args(&["Title", "", "0"]).as_slice()
+        );
+        assert_ne!(single, multi);
+    }
+
+    #[test]
+    fn osascript_save_file_argv_splits_the_start() {
+        let request = Request::SaveFile {
+            title: "Title",
+            start: Some(std::path::Path::new("/home/user/out.txt")),
+            filters: &[],
+        };
+        let save = argv(&request);
+        assert_eq!(
+            &save[save.len() - 3..],
+            args(&["Title", "/home/user", "out.txt"]).as_slice()
+        );
+
+        let bare = Request::SaveFile {
+            title: "Title",
+            start: Some(std::path::Path::new("out.txt")),
+            filters: &[],
+        };
+        let bare_argv = argv(&bare);
+        assert_eq!(
+            &bare_argv[bare_argv.len() - 3..],
+            args(&["Title", "", "out.txt"]).as_slice()
+        );
+    }
+
+    #[test]
+    fn osascript_folder_argv() {
+        let request = Request::Folder {
+            title: "Title",
+            start: None,
+        };
+        let folder = argv(&request);
+        assert_eq!(&folder[folder.len() - 2..], args(&["Title", ""]).as_slice());
     }
 
     #[test]

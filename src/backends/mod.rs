@@ -134,6 +134,13 @@ pub(crate) fn decode_choices(backend: Backend, text: &str, choices: &[&str]) -> 
     }
 }
 
+/// A path as the text a helper program wants. Non-UTF-8 paths
+/// degrade lossily, which is the best a spawned helper can be
+/// handed through argv or the environment anyway.
+pub(crate) fn path_text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 /// Find an executable on `PATH`.
 pub(crate) fn find_on_path(program: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;

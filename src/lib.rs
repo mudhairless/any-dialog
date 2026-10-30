@@ -15,8 +15,9 @@ mod request;
 
 pub use backends::Backend;
 pub use error::Error;
+pub use request::FileFilter;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use backends::{argv, classify, decode_choices, env};
@@ -140,6 +141,74 @@ impl Dialogs {
             Some(raw) => Ok(Some(normalize_color(&raw))),
             None => Ok(None),
         }
+    }
+
+    /// Ask the user to pick a file to open. `start` is where the
+    /// dialog opens: a directory, or a file whose folder it opens
+    /// on. `Ok(None)` means they cancelled.
+    pub fn prompt_open_file(
+        &self,
+        title: &str,
+        start: Option<&Path>,
+        filters: &[FileFilter],
+    ) -> Result<Option<PathBuf>, Error> {
+        self.run(Request::OpenFile {
+            title,
+            start,
+            filters,
+            multiple: false,
+        })
+        .map(|answer| answer.map(PathBuf::from))
+    }
+
+    /// Ask the user to pick any number of files to open, starting
+    /// at `start`. `Ok(None)` means they cancelled.
+    pub fn prompt_open_files(
+        &self,
+        title: &str,
+        start: Option<&Path>,
+        filters: &[FileFilter],
+    ) -> Result<Option<Vec<PathBuf>>, Error> {
+        let request = Request::OpenFile {
+            title,
+            start,
+            filters,
+            multiple: true,
+        };
+        match self.run_completed(request)? {
+            Completed::Answered(Some(text)) => Ok(Some(text.lines().map(PathBuf::from).collect())),
+            Completed::Answered(None) => Ok(Some(Vec::new())),
+            Completed::Cancelled => Ok(None),
+        }
+    }
+
+    /// Ask the user to pick a file to save to. `start` may name a
+    /// suggested file, whose name pre-fills the dialog where the
+    /// backend supports it. Native overwrite confirmation is left
+    /// to the dialog itself. `Ok(None)` means they cancelled.
+    pub fn prompt_save_file(
+        &self,
+        title: &str,
+        start: Option<&Path>,
+        filters: &[FileFilter],
+    ) -> Result<Option<PathBuf>, Error> {
+        self.run(Request::SaveFile {
+            title,
+            start,
+            filters,
+        })
+        .map(|answer| answer.map(PathBuf::from))
+    }
+
+    /// Ask the user to pick a folder, starting at `start`.
+    /// `Ok(None)` means they cancelled.
+    pub fn prompt_folder(
+        &self,
+        title: &str,
+        start: Option<&Path>,
+    ) -> Result<Option<PathBuf>, Error> {
+        self.run(Request::Folder { title, start })
+            .map(|answer| answer.map(PathBuf::from))
     }
 
     /// Show an informational message with a single dismiss button.

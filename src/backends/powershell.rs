@@ -26,7 +26,7 @@
 //! a cancel only when both output streams are empty.
 
 use crate::outcome::Outcome;
-use crate::request::{Level, Request};
+use crate::request::{FileFilter, Level, Request};
 
 /// The helper program's name, as probed for on `PATH`.
 pub(crate) const PROGRAM: &str = "powershell.exe";
@@ -38,6 +38,9 @@ const MULTIPLE_SCRIPT: &str = include_str!("powershell/multiple.ps1");
 const COLOR_SCRIPT: &str = include_str!("powershell/color.ps1");
 const MESSAGE_SCRIPT: &str = include_str!("powershell/message.ps1");
 const CONFIRM_SCRIPT: &str = include_str!("powershell/confirm.ps1");
+const OPEN_SCRIPT: &str = include_str!("powershell/open.ps1");
+const SAVE_SCRIPT: &str = include_str!("powershell/save.ps1");
+const FOLDER_SCRIPT: &str = include_str!("powershell/folder.ps1");
 
 /// Build the argument list for one request, excluding argv[0]: the
 /// fixed invocation flags, then the request's script as the
@@ -51,6 +54,9 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
         Request::Color { .. } => COLOR_SCRIPT,
         Request::Message { .. } => MESSAGE_SCRIPT,
         Request::Confirm { .. } => CONFIRM_SCRIPT,
+        Request::OpenFile { .. } => OPEN_SCRIPT,
+        Request::SaveFile { .. } => SAVE_SCRIPT,
+        Request::Folder { .. } => FOLDER_SCRIPT,
     };
     [
         "-NoProfile",
@@ -147,8 +153,67 @@ pub(crate) fn env(request: &Request<'_>) -> Vec<(String, String)> {
             push("ANYDIALOG_TITLE", title);
             push("ANYDIALOG_MESSAGE", message);
         }
+        Request::OpenFile {
+            title,
+            start,
+            filters,
+            multiple,
+        } => {
+            push("ANYDIALOG_TITLE", title);
+            push(
+                "ANYDIALOG_START",
+                &start.map(super::path_text).unwrap_or_default(),
+            );
+            push("ANYDIALOG_FILTER", &filter_text(filters));
+            push("ANYDIALOG_MULTIPLE", if multiple { "1" } else { "0" });
+        }
+        Request::SaveFile {
+            title,
+            start,
+            filters,
+        } => {
+            push("ANYDIALOG_TITLE", title);
+            push(
+                "ANYDIALOG_START",
+                &start.map(super::path_text).unwrap_or_default(),
+            );
+            push("ANYDIALOG_FILTER", &filter_text(filters));
+        }
+        Request::Folder { title, start } => {
+            push("ANYDIALOG_TITLE", title);
+            push(
+                "ANYDIALOG_START",
+                &start.map(super::path_text).unwrap_or_default(),
+            );
+        }
     }
     pairs
+}
+
+/// The WinForms filter string for a request's filters:
+/// `name (*.ext;*.ext)|*.ext;*.ext` entries joined by `|`, or
+/// the all-files entry when the request has no filters.
+fn filter_text(filters: &[FileFilter]) -> String {
+    if filters.is_empty() {
+        return "All files (*.*)|*.*".to_string();
+    }
+    filters
+        .iter()
+        .map(|filter| {
+            let patterns: Vec<String> = filter
+                .extensions
+                .iter()
+                .map(|extension| format!("*.{extension}"))
+                .collect();
+            format!(
+                "{} ({})|{}",
+                filter.name,
+                patterns.join(";"),
+                patterns.join(";")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 /// Interpret a PowerShell run. Success reuses the shared reading of
@@ -241,6 +306,30 @@ mod tests {
         };
         assert_eq!(argv(&confirm)[5], CONFIRM_SCRIPT);
         assert!(argv(&confirm)[5].contains("YesNo"));
+
+        let open = Request::OpenFile {
+            title: "Title",
+            start: None,
+            filters: &[],
+            multiple: false,
+        };
+        assert_eq!(argv(&open)[5], OPEN_SCRIPT);
+        assert!(argv(&open)[5].contains("OpenFileDialog"));
+
+        let save = Request::SaveFile {
+            title: "Title",
+            start: None,
+            filters: &[],
+        };
+        assert_eq!(argv(&save)[5], SAVE_SCRIPT);
+        assert!(argv(&save)[5].contains("SaveFileDialog"));
+
+        let folder = Request::Folder {
+            title: "Title",
+            start: None,
+        };
+        assert_eq!(argv(&folder)[5], FOLDER_SCRIPT);
+        assert!(argv(&folder)[5].contains("FolderBrowserDialog"));
     }
 
     #[test]
@@ -338,6 +427,57 @@ mod tests {
                 pair("ANYDIALOG_TITLE", "Title"),
                 pair("ANYDIALOG_MESSAGE", "Message"),
             ]
+        );
+
+        let filters = [FileFilter {
+            name: "Images",
+            extensions: &["png", "jpg"],
+        }];
+        let open = Request::OpenFile {
+            title: "Title",
+            start: Some(std::path::Path::new("/home/user")),
+            filters: &filters,
+            multiple: true,
+        };
+        assert_eq!(
+            env(&open),
+            vec![
+                pair("ANYDIALOG_TITLE", "Title"),
+                pair("ANYDIALOG_START", "/home/user"),
+                pair("ANYDIALOG_FILTER", "Images (*.png;*.jpg)|*.png;*.jpg"),
+                pair("ANYDIALOG_MULTIPLE", "1"),
+            ]
+        );
+
+        let folder = Request::Folder {
+            title: "Title",
+            start: None,
+        };
+        assert_eq!(
+            env(&folder),
+            vec![
+                pair("ANYDIALOG_TITLE", "Title"),
+                pair("ANYDIALOG_START", ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn filter_text_falls_back_to_all_files() {
+        assert_eq!(filter_text(&[]), "All files (*.*)|*.*");
+        let filters = [
+            FileFilter {
+                name: "Images",
+                extensions: &["png"],
+            },
+            FileFilter {
+                name: "Text",
+                extensions: &["txt", "md"],
+            },
+        ];
+        assert_eq!(
+            filter_text(&filters),
+            "Images (*.png)|*.png|Text (*.txt;*.md)|*.txt;*.md"
         );
     }
 

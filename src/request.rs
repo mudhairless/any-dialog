@@ -13,6 +13,18 @@ pub(crate) enum Level {
     Error,
 }
 
+/// A named set of file extensions for a file dialog, such as
+/// "Images" over `png` and `jpg`. Extensions are bare names,
+/// without dots or wildcards; each backend decorates them into
+/// its own filter syntax. How much of the grouping survives is
+/// backend-dependent: macOS's chooser takes one flat type list,
+/// so there the groups merge into a single extension set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileFilter<'a> {
+    pub name: &'a str,
+    pub extensions: &'a [&'a str],
+}
+
 /// One request, independent of which backend will render it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Request<'a> {
@@ -57,5 +69,28 @@ pub(crate) enum Request<'a> {
     Confirm {
         title: &'a str,
         message: &'a str,
+    },
+    /// Pick a file to open. `start` is where the dialog opens: a
+    /// directory, or a file whose folder it opens on. `multiple`
+    /// allows picking several files at once; the answer then
+    /// arrives one path per line.
+    OpenFile {
+        title: &'a str,
+        start: Option<&'a std::path::Path>,
+        filters: &'a [FileFilter<'a>],
+        multiple: bool,
+    },
+    /// Pick a file to save to. `start` may name a suggested file;
+    /// its name pre-fills the dialog's name field where the
+    /// backend supports that.
+    SaveFile {
+        title: &'a str,
+        start: Option<&'a std::path::Path>,
+        filters: &'a [FileFilter<'a>],
+    },
+    /// Pick a folder. `start` is the folder the dialog opens on.
+    Folder {
+        title: &'a str,
+        start: Option<&'a std::path::Path>,
     },
 }
