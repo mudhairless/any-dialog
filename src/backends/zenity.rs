@@ -4,7 +4,7 @@
 //! The shared vocabulary it renders lives in [`crate::request`], and
 //! what counts as an answer or a cancel lives in [`crate::outcome`].
 
-use crate::request::Request;
+use crate::request::{Level, Request};
 
 /// The helper program's name, as probed for on `PATH`.
 pub(crate) const PROGRAM: &str = "zenity";
@@ -62,10 +62,36 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
             }
             args
         }
-        Request::Error { title, message } => vec![
+        Request::Password { title, label } => vec![
+            "--entry".to_string(),
             "--title".to_string(),
             title.to_string(),
-            "--error".to_string(),
+            "--text".to_string(),
+            label.to_string(),
+            "--hide-text".to_string(),
+        ],
+        Request::Message {
+            title,
+            message,
+            level,
+        } => {
+            let flag = match level {
+                Level::Info => "--info",
+                Level::Warning => "--warning",
+                Level::Error => "--error",
+            };
+            vec![
+                "--title".to_string(),
+                title.to_string(),
+                flag.to_string(),
+                "--text".to_string(),
+                message.to_string(),
+            ]
+        }
+        Request::Confirm { title, message } => vec![
+            "--title".to_string(),
+            title.to_string(),
+            "--question".to_string(),
             "--text".to_string(),
             message.to_string(),
         ],
@@ -141,14 +167,52 @@ mod tests {
     }
 
     #[test]
-    fn error_argv() {
-        let request = Request::Error {
+    fn password_argv() {
+        let request = Request::Password {
+            title: "Title",
+            label: "Label",
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "--entry",
+                "--title",
+                "Title",
+                "--text",
+                "Label",
+                "--hide-text",
+            ])
+        );
+    }
+
+    #[test]
+    fn message_argv_per_level() {
+        for (level, flag) in [
+            (Level::Info, "--info"),
+            (Level::Warning, "--warning"),
+            (Level::Error, "--error"),
+        ] {
+            let request = Request::Message {
+                title: "Title",
+                message: "Message",
+                level,
+            };
+            assert_eq!(
+                argv(&request),
+                args(&["--title", "Title", flag, "--text", "Message"])
+            );
+        }
+    }
+
+    #[test]
+    fn confirm_argv() {
+        let request = Request::Confirm {
             title: "Title",
             message: "Message",
         };
         assert_eq!(
             argv(&request),
-            args(&["--title", "Title", "--error", "--text", "Message"])
+            args(&["--title", "Title", "--question", "--text", "Message"])
         );
     }
 }

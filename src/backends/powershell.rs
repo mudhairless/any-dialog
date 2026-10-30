@@ -26,14 +26,16 @@
 //! a cancel only when both output streams are empty.
 
 use crate::outcome::Outcome;
-use crate::request::Request;
+use crate::request::{Level, Request};
 
 /// The helper program's name, as probed for on `PATH`.
 pub(crate) const PROGRAM: &str = "powershell.exe";
 
 const TEXT_SCRIPT: &str = include_str!("powershell/text.ps1");
+const PASSWORD_SCRIPT: &str = include_str!("powershell/password.ps1");
 const CHOICE_SCRIPT: &str = include_str!("powershell/choice.ps1");
-const ERROR_SCRIPT: &str = include_str!("powershell/error.ps1");
+const MESSAGE_SCRIPT: &str = include_str!("powershell/message.ps1");
+const CONFIRM_SCRIPT: &str = include_str!("powershell/confirm.ps1");
 
 /// Build the argument list for one request, excluding argv[0]: the
 /// fixed invocation flags, then the request's script as the
@@ -41,8 +43,10 @@ const ERROR_SCRIPT: &str = include_str!("powershell/error.ps1");
 pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
     let script = match request {
         Request::Text { .. } => TEXT_SCRIPT,
+        Request::Password { .. } => PASSWORD_SCRIPT,
         Request::Choice { .. } => CHOICE_SCRIPT,
-        Request::Error { .. } => ERROR_SCRIPT,
+        Request::Message { .. } => MESSAGE_SCRIPT,
+        Request::Confirm { .. } => CONFIRM_SCRIPT,
     };
     [
         "-NoProfile",
@@ -91,7 +95,27 @@ pub(crate) fn env(request: &Request<'_>) -> Vec<(String, String)> {
                 push(&format!("ANYDIALOG_CHOICE_{index}"), choice);
             }
         }
-        Request::Error { title, message } => {
+        Request::Password { title, label } => {
+            push("ANYDIALOG_TITLE", title);
+            push("ANYDIALOG_LABEL", label);
+        }
+        Request::Message {
+            title,
+            message,
+            level,
+        } => {
+            push("ANYDIALOG_TITLE", title);
+            push("ANYDIALOG_MESSAGE", message);
+            push(
+                "ANYDIALOG_ICON",
+                match level {
+                    Level::Info => "Information",
+                    Level::Warning => "Warning",
+                    Level::Error => "Error",
+                },
+            );
+        }
+        Request::Confirm { title, message } => {
             push("ANYDIALOG_TITLE", title);
             push("ANYDIALOG_MESSAGE", message);
         }
@@ -153,11 +177,26 @@ mod tests {
         };
         assert_eq!(argv(&choice)[5], CHOICE_SCRIPT);
 
-        let error = Request::Error {
+        let password = Request::Password {
+            title: "Title",
+            label: "Label",
+        };
+        assert_eq!(argv(&password)[5], PASSWORD_SCRIPT);
+        assert!(argv(&password)[5].contains("UseSystemPasswordChar"));
+
+        let message = Request::Message {
+            title: "Title",
+            message: "Message",
+            level: Level::Info,
+        };
+        assert_eq!(argv(&message)[5], MESSAGE_SCRIPT);
+
+        let confirm = Request::Confirm {
             title: "Title",
             message: "Message",
         };
-        assert_eq!(argv(&error)[5], ERROR_SCRIPT);
+        assert_eq!(argv(&confirm)[5], CONFIRM_SCRIPT);
+        assert!(argv(&confirm)[5].contains("YesNo"));
     }
 
     #[test]
@@ -194,12 +233,38 @@ mod tests {
             ]
         );
 
-        let error = Request::Error {
+        let password = Request::Password {
+            title: "Title",
+            label: "Label",
+        };
+        assert_eq!(
+            env(&password),
+            vec![
+                pair("ANYDIALOG_TITLE", "Title"),
+                pair("ANYDIALOG_LABEL", "Label"),
+            ]
+        );
+
+        let message = Request::Message {
+            title: "Title",
+            message: "Message",
+            level: Level::Warning,
+        };
+        assert_eq!(
+            env(&message),
+            vec![
+                pair("ANYDIALOG_TITLE", "Title"),
+                pair("ANYDIALOG_MESSAGE", "Message"),
+                pair("ANYDIALOG_ICON", "Warning"),
+            ]
+        );
+
+        let confirm = Request::Confirm {
             title: "Title",
             message: "Message",
         };
         assert_eq!(
-            env(&error),
+            env(&confirm),
             vec![
                 pair("ANYDIALOG_TITLE", "Title"),
                 pair("ANYDIALOG_MESSAGE", "Message"),

@@ -10,9 +10,10 @@
 //!   they confirm the result shapes the crate's scripts rely on.
 //!   The list dialog is skipped here, because `choose from list`
 //!   has no timeout parameter and would hang an unattended job.
-//! - `--case text|choice|error`: run exactly one dialog through
-//!   the crate and print the mapped result. CI uses this with a
-//!   synthetic Escape keypress; humans can use it too.
+//! - `--case text|password|choice|error|info|warning|confirm`:
+//!   run exactly one dialog through the crate and print the mapped
+//!   result. CI uses this with a synthetic Escape keypress; humans
+//!   can use it too.
 //! - `--interactive`: the full human checklist through the crate:
 //!   OK, cancel, selection, and hostile text (quotes, commas,
 //!   non-ASCII), printing the expected and actual result per case.
@@ -37,6 +38,25 @@ const RAW_ALERT_SCRIPT: &[&str] = &[
     "on run argv",
     "display alert (item 1 of argv) message (item 2 of argv) giving up after 3",
     "return \"\"",
+    "end run",
+];
+
+const RAW_MESSAGE_SCRIPT: &[&str] = &[
+    "on run argv",
+    "display dialog (item 2 of argv) buttons {\"OK\"} default button \"OK\" with title (item 1 of argv) with icon (item 3 of argv as integer) giving up after 3",
+    "return \"\"",
+    "end run",
+];
+
+// When this dialog gives up, `button returned` comes back empty,
+// so the script prints "no". That is a property of the timeout,
+// not of the crate's script, which has no giving-up clause and
+// can only return through a real click or a cancel.
+const RAW_CONFIRM_SCRIPT: &[&str] = &[
+    "on run argv",
+    "set answer to display dialog (item 2 of argv) buttons {\"No\", \"Yes\"} default button \"Yes\" with title (item 1 of argv) giving up after 3",
+    "if button returned of answer is \"Yes\" then return \"yes\"",
+    "return \"no\"",
     "end run",
 ];
 
@@ -72,6 +92,26 @@ fn scripted() {
         &[
             "any-dialog probe",
             "Scripted alert probe: this alert dismisses itself",
+        ],
+    );
+    // Message and confirm run after text and alert on purpose: the
+    // CI workflow screenshots at fixed times that frame the first
+    // two dialogs, and adding cases must not move them.
+    raw_case(
+        "message (giving up after 3)",
+        RAW_MESSAGE_SCRIPT,
+        &[
+            "any-dialog probe",
+            "Scripted message probe: this dialog dismisses itself",
+            "1",
+        ],
+    );
+    raw_case(
+        "confirm (giving up after 3)",
+        RAW_CONFIRM_SCRIPT,
+        &[
+            "any-dialog probe",
+            "Scripted confirm probe: this dialog dismisses itself",
         ],
     );
     println!(
@@ -122,12 +162,40 @@ fn crate_case(case: &str) {
             );
             println!("CASE choice => {result:?}");
         }
+        "password" => {
+            let result = dialogs.prompt_password(
+                "any-dialog probe",
+                "Crate password probe: type something, or cancel",
+            );
+            println!("CASE password => {result:?}");
+        }
         "error" => {
             let result =
                 dialogs.show_error("any-dialog probe", "Crate error probe: dismiss this alert");
             println!("CASE error => {result:?}");
         }
-        other => println!("CASE {other}: unknown case (want text, choice, or error)"),
+        "info" => {
+            let result =
+                dialogs.show_info("any-dialog probe", "Crate info probe: dismiss this message");
+            println!("CASE info => {result:?}");
+        }
+        "warning" => {
+            let result = dialogs.show_warning(
+                "any-dialog probe",
+                "Crate warning probe: dismiss this message",
+            );
+            println!("CASE warning => {result:?}");
+        }
+        "confirm" => {
+            let result = dialogs.confirm(
+                "any-dialog probe",
+                "Crate confirm probe: answer, or dismiss",
+            );
+            println!("CASE confirm => {result:?}");
+        }
+        other => println!(
+            "CASE {other}: unknown case (want text, password, choice, error, info, warning, or confirm)"
+        ),
     }
     let _ = std::io::stdout().flush();
 }
@@ -137,7 +205,7 @@ fn interactive() {
     println!("INTERACTIVE PROBE: work through the dialogs as they appear.");
     println!("backend available: {}", dialogs.available());
 
-    step("1/6 text, OK path: type anything, then click OK");
+    step("1/12 text, OK path: type anything, then click OK");
     let result = dialogs.prompt_text(
         "any-dialog probe",
         "Step 1: type anything and click OK",
@@ -145,11 +213,11 @@ fn interactive() {
     );
     println!("CASE text-ok => {result:?} (want Ok(Some(your text)))");
 
-    step("2/6 text, cancel path: click Cancel");
+    step("2/12 text, cancel path: click Cancel");
     let result = dialogs.prompt_text("any-dialog probe", "Step 2: click Cancel", None);
     println!("CASE text-cancel => {result:?} (want Ok(None))");
 
-    step("3/6 hostile text: leave the text as is, click OK");
+    step("3/12 hostile text: leave the text as is, click OK");
     let result = dialogs.prompt_text(
         "Probe \"quotes\", commas",
         "Step 3: quotes \"here\", commas, and ünicode in label and text",
@@ -157,7 +225,7 @@ fn interactive() {
     );
     println!("CASE text-hostile => {result:?} (want Ok(Some(\"a\\\"b,c—d\")))");
 
-    step("4/6 choice, pick gamma");
+    step("4/12 choice, pick gamma");
     let result = dialogs.prompt_choice(
         "any-dialog probe",
         "Step 4: pick gamma and click OK",
@@ -166,7 +234,7 @@ fn interactive() {
     );
     println!("CASE choice-pick => {result:?} (want Ok(Some(\"gamma\")))");
 
-    step("5/6 choice, cancel path: click Cancel");
+    step("5/12 choice, cancel path: click Cancel");
     let result = dialogs.prompt_choice(
         "any-dialog probe",
         "Step 5: click Cancel",
@@ -175,9 +243,36 @@ fn interactive() {
     );
     println!("CASE choice-cancel => {result:?} (want Ok(None))");
 
-    step("6/6 error alert: dismiss it");
+    step("6/12 error alert: dismiss it");
     let result = dialogs.show_error("any-dialog probe", "Step 6: dismiss this alert");
     println!("CASE error => {result:?} (want Ok(()))");
+
+    step("7/12 info message: dismiss it");
+    let result = dialogs.show_info("any-dialog probe", "Step 7: dismiss this message");
+    println!("CASE info => {result:?} (want Ok(()))");
+
+    step("8/12 warning message: dismiss it");
+    let result = dialogs.show_warning("any-dialog probe", "Step 8: dismiss this message");
+    println!("CASE warning => {result:?} (want Ok(()))");
+
+    step("9/12 confirm, yes path: click Yes");
+    let result = dialogs.confirm("any-dialog probe", "Step 9: click Yes");
+    println!("CASE confirm-yes => {result:?} (want Ok(true))");
+
+    step("10/12 confirm, no path: click No");
+    let result = dialogs.confirm("any-dialog probe", "Step 10: click No");
+    println!("CASE confirm-no => {result:?} (want Ok(false))");
+
+    step("11/12 password, OK path: type a throwaway password, click OK");
+    let result = dialogs.prompt_password(
+        "any-dialog probe",
+        "Step 11: the typed text should be masked; type anything",
+    );
+    println!("CASE password-ok => {result:?} (want Ok(Some(your text)))");
+
+    step("12/12 password, cancel path: click Cancel");
+    let result = dialogs.prompt_password("any-dialog probe", "Step 12: click Cancel");
+    println!("CASE password-cancel => {result:?} (want Ok(None))");
 
     println!("INTERACTIVE PROBE done. Save this output with your macOS version.");
 }

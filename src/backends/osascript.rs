@@ -19,7 +19,7 @@
 //! cancel from a failure; the -128 marker on stderr can.
 
 use crate::outcome::Outcome;
-use crate::request::Request;
+use crate::request::{Level, Request};
 
 /// The helper program's name, as probed for on `PATH`.
 pub(crate) const PROGRAM: &str = "osascript";
@@ -45,6 +45,37 @@ const ERROR_SCRIPT: &[&str] = &[
     "on run argv",
     "display alert (item 1 of argv) message (item 2 of argv)",
     "return \"\"",
+    "end run",
+];
+
+const PASSWORD_SCRIPT: &[&str] = &[
+    "on run argv",
+    "set answer to display dialog (item 2 of argv) default answer \"\" with title (item 1 of argv) hidden answer",
+    "return text returned of answer",
+    "end run",
+];
+
+/// Info and warning messages. Errors keep the sharper `display
+/// alert` form above; these use `display dialog` because it is the
+/// form that takes an icon: 1 is the application (note) icon, 2 is
+/// caution. The icon number travels as a script argument like any
+/// other value and is coerced to an integer inside the script.
+const MESSAGE_SCRIPT: &[&str] = &[
+    "on run argv",
+    "display dialog (item 2 of argv) buttons {\"OK\"} default button \"OK\" with title (item 1 of argv) with icon (item 3 of argv as integer)",
+    "return \"\"",
+    "end run",
+];
+
+/// The buttons are named No and Yes rather than Cancel and OK on
+/// purpose: a button named Cancel would raise -128 like a cancel,
+/// making "no" indistinguishable from dismissing the dialog. As
+/// written, no answers normally and only dismissal cancels.
+const CONFIRM_SCRIPT: &[&str] = &[
+    "on run argv",
+    "set answer to display dialog (item 2 of argv) buttons {\"No\", \"Yes\"} default button \"Yes\" with title (item 1 of argv)",
+    "if button returned of answer is \"Yes\" then return \"yes\"",
+    "return \"no\"",
     "end run",
 ];
 
@@ -78,8 +109,26 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
             data.extend(choices.iter().map(|choice| (*choice).to_string()));
             (CHOICE_SCRIPT, data)
         }
-        Request::Error { title, message } => {
-            (ERROR_SCRIPT, vec![title.to_string(), message.to_string()])
+        Request::Password { title, label } => {
+            (PASSWORD_SCRIPT, vec![title.to_string(), label.to_string()])
+        }
+        Request::Message {
+            title,
+            message,
+            level,
+        } => match level {
+            Level::Error => (ERROR_SCRIPT, vec![title.to_string(), message.to_string()]),
+            Level::Info => (
+                MESSAGE_SCRIPT,
+                vec![title.to_string(), message.to_string(), "1".to_string()],
+            ),
+            Level::Warning => (
+                MESSAGE_SCRIPT,
+                vec![title.to_string(), message.to_string(), "2".to_string()],
+            ),
+        },
+        Request::Confirm { title, message } => {
+            (CONFIRM_SCRIPT, vec![title.to_string(), message.to_string()])
         }
     };
 
@@ -159,15 +208,84 @@ mod tests {
     }
 
     #[test]
-    fn osascript_error_argv() {
-        let request = Request::Error {
+    fn osascript_password_argv_passes_values_as_script_arguments() {
+        let request = Request::Password {
+            title: "Title",
+            label: "Label",
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "-e",
+                "on run argv",
+                "-e",
+                "set answer to display dialog (item 2 of argv) default answer \"\" with title (item 1 of argv) hidden answer",
+                "-e",
+                "return text returned of answer",
+                "-e",
+                "end run",
+                "Title",
+                "Label",
+            ])
+        );
+    }
+
+    #[test]
+    fn osascript_error_message_argv_uses_the_alert_script() {
+        let request = Request::Message {
             title: "Title",
             message: "Message",
+            level: Level::Error,
         };
         let argv = argv(&request);
         assert_eq!(
             &argv[argv.len() - 2..],
             args(&["Title", "Message"]).as_slice()
+        );
+        assert!(
+            argv.iter().any(|arg| arg.contains("display alert")),
+            "error messages render with display alert"
+        );
+    }
+
+    #[test]
+    fn osascript_info_and_warning_argv_carry_their_icon_numbers() {
+        for (level, icon) in [(Level::Info, "1"), (Level::Warning, "2")] {
+            let request = Request::Message {
+                title: "Title",
+                message: "Message",
+                level,
+            };
+            let argv = argv(&request);
+            assert_eq!(
+                &argv[argv.len() - 3..],
+                args(&["Title", "Message", icon]).as_slice()
+            );
+        }
+    }
+
+    #[test]
+    fn osascript_confirm_argv_passes_values_as_script_arguments() {
+        let request = Request::Confirm {
+            title: "Title",
+            message: "Message",
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "-e",
+                "on run argv",
+                "-e",
+                "set answer to display dialog (item 2 of argv) buttons {\"No\", \"Yes\"} default button \"Yes\" with title (item 1 of argv)",
+                "-e",
+                "if button returned of answer is \"Yes\" then return \"yes\"",
+                "-e",
+                "return \"no\"",
+                "-e",
+                "end run",
+                "Title",
+                "Message",
+            ])
         );
     }
 

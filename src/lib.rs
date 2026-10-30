@@ -21,7 +21,7 @@ use std::process::{Command, Stdio};
 
 use backends::{argv, classify, env};
 use outcome::Outcome;
-use request::Request;
+use request::{Level, Request};
 
 /// A handle to the best dialog backend found on this machine.
 #[derive(Clone, Debug)]
@@ -74,6 +74,12 @@ impl Dialogs {
         })
     }
 
+    /// Ask for a password or other secret. The text is hidden while
+    /// typed. `Ok(None)` means the user cancelled.
+    pub fn prompt_password(&self, title: &str, label: &str) -> Result<Option<String>, Error> {
+        self.run(Request::Password { title, label })
+    }
+
     /// Ask the user to pick one of `choices`. `Ok(None)` means they cancelled.
     #[allow(dead_code)] // part of the liftable adapter API; the tray has no picker yet
     pub fn prompt_choice(
@@ -91,12 +97,55 @@ impl Dialogs {
         })
     }
 
-    /// Show a message with a single dismiss button.
+    /// Show an informational message with a single dismiss button.
+    pub fn show_info(&self, title: &str, message: &str) -> Result<(), Error> {
+        self.run(Request::Message {
+            title,
+            message,
+            level: Level::Info,
+        })
+        .map(|_| ())
+    }
+
+    /// Show a warning message with a single dismiss button.
+    pub fn show_warning(&self, title: &str, message: &str) -> Result<(), Error> {
+        self.run(Request::Message {
+            title,
+            message,
+            level: Level::Warning,
+        })
+        .map(|_| ())
+    }
+
+    /// Show an error message with a single dismiss button.
     pub fn show_error(&self, title: &str, message: &str) -> Result<(), Error> {
-        self.run(Request::Error { title, message }).map(|_| ())
+        self.run(Request::Message {
+            title,
+            message,
+            level: Level::Error,
+        })
+        .map(|_| ())
+    }
+
+    /// Ask a yes/no question. `Ok(true)` is yes; `Ok(false)` is no,
+    /// and also covers the dialog being dismissed without answering,
+    /// which most backends cannot tell apart from no.
+    pub fn confirm(&self, title: &str, message: &str) -> Result<bool, Error> {
+        match self.run_completed(Request::Confirm { title, message })? {
+            Completed::Answered(Some(text)) => Ok(text == "yes"),
+            Completed::Answered(None) => Ok(true),
+            Completed::Cancelled => Ok(false),
+        }
     }
 
     fn run(&self, request: Request<'_>) -> Result<Option<String>, Error> {
+        match self.run_completed(request)? {
+            Completed::Answered(text) => Ok(text),
+            Completed::Cancelled => Ok(None),
+        }
+    }
+
+    fn run_completed(&self, request: Request<'_>) -> Result<Completed, Error> {
         let Some((backend, program)) = &self.backend else {
             return Err(Error::NoBackend);
         };
@@ -118,14 +167,22 @@ impl Dialogs {
             &String::from_utf8_lossy(&output.stdout),
             &String::from_utf8_lossy(&output.stderr),
         ) {
-            Outcome::Answered(text) => Ok(text),
-            Outcome::Cancelled => Ok(None),
+            Outcome::Answered(text) => Ok(Completed::Answered(text)),
+            Outcome::Cancelled => Ok(Completed::Cancelled),
             Outcome::Failed => Err(Error::Exit {
                 program: program.clone(),
                 status: output.status,
             }),
         }
     }
+}
+
+/// A dialog run that finished: either it was answered (with whatever
+/// text the backend produced, if any) or it was cancelled. Failures
+/// travel as `Err` instead, so this never carries [`Outcome::Failed`].
+enum Completed {
+    Answered(Option<String>),
+    Cancelled,
 }
 
 impl Default for Dialogs {

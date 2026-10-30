@@ -27,11 +27,14 @@ If no helper is installed, calls return `Error::NoBackend`.
 
 ## What it does
 
-Three dialogs, each returning `Ok(None)` when the user cancels:
+The prompt dialogs return `Ok(None)` when the user cancels:
 
 - `prompt_text`: ask for a line of text, with an optional initial value
+- `prompt_password`: ask for a password or other secret, masked while typed
 - `prompt_choice`: ask the user to pick one item from a list
-- `show_error`: show a message with a single dismiss button
+- `confirm`: ask a yes/no question, returning a bool
+- `show_info`, `show_warning`, `show_error`: show a message with a
+  single dismiss button, at three levels of seriousness
 
 ## Usage
 
