@@ -7,20 +7,18 @@
 //! Every call blocks until the user answers, so callers should run them on a
 //! worker thread rather than on a UI or event-loop thread.
 
-mod argv;
-mod backend;
+mod backends;
 mod error;
 mod outcome;
 mod request;
 
-pub use backend::Backend;
+pub use backends::Backend;
 pub use error::Error;
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use argv::argv;
-use backend::find_on_path;
+use backends::argv;
 use outcome::{Outcome, classify};
 use request::Request;
 
@@ -33,7 +31,9 @@ pub struct Dialogs {
 impl Dialogs {
     /// Probe `PATH`, preferring `kdialog` over `zenity`.
     pub fn new() -> Dialogs {
-        Dialogs::with_paths(find_on_path("kdialog"), find_on_path("zenity"))
+        Dialogs {
+            backend: backends::probe(),
+        }
     }
 
     /// Build a handle from explicit executable paths, bypassing `PATH`.
