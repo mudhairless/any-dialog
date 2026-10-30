@@ -12,8 +12,11 @@ Probed in order:
 
 1. `kdialog` (Linux, common on KDE installs)
 2. `zenity` (Linux, common on GNOME installs)
+3. `osascript` (macOS, bundled with the OS)
 
-A macOS backend via `osascript` is planned.
+On macOS the order flips: `osascript` goes first there, since it is
+part of the OS, with the Linux tools as fallbacks.
+
 Windows is not supported yet. Support may be added later if a suitable
 approach turns up, which is why the crate name does not name an OS or a
 mechanism.
@@ -22,7 +25,7 @@ The expanded feature set in ROADMAP.md is version 1.0, the first full
 release. Version 0.1.0 was published early to reserve the crate name;
 until 1.0 lands, this README describes the dialogs the code has today.
 
-If neither helper is installed, calls return `Error::NoBackend`.
+If no helper is installed, calls return `Error::NoBackend`.
 
 ## What it does
 
