@@ -13,13 +13,11 @@ Probed in order:
 1. `kdialog` (Linux, common on KDE installs)
 2. `zenity` (Linux, common on GNOME installs)
 3. `osascript` (macOS, bundled with the OS)
+4. `powershell` (Windows, bundled with the OS)
 
-On macOS the order flips: `osascript` goes first there, since it is
-part of the OS, with the Linux tools as fallbacks.
-
-Windows is not supported yet: a PowerShell backend is planned for
-1.0 (see ROADMAP.md), which is why the crate name does not name an
-OS or a mechanism.
+On macOS and Windows the order flips: the OS's own bundled helper
+(`osascript` or `powershell`) goes first there, since it is part of
+the OS, with the other tools as fallbacks.
 
 The expanded feature set in ROADMAP.md is version 1.0, the first full
 release. Version 0.1.0 was published early to reserve the crate name;

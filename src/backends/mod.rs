@@ -15,6 +15,7 @@
 
 mod kdialog;
 mod osascript;
+mod powershell;
 mod zenity;
 
 use std::path::{Path, PathBuf};
@@ -28,23 +29,34 @@ pub enum Backend {
     Kdialog,
     Zenity,
     Osascript,
+    Powershell,
 }
 
-/// Probe for a backend, in preference order. osascript is bundled
-/// with macOS, so there it goes first; anywhere else it is a last
-/// resort that normally is not installed at all.
+/// Probe for a backend, in preference order. Each OS's bundled
+/// helper goes first on its own OS (osascript on macOS,
+/// powershell.exe on Windows); anywhere else the bundled helpers
+/// are last resorts that normally are not installed at all.
 pub(crate) fn probe() -> Option<(Backend, PathBuf)> {
-    let order: [(Backend, &str); 3] = if cfg!(target_os = "macos") {
+    let order: [(Backend, &str); 4] = if cfg!(target_os = "windows") {
+        [
+            (Backend::Powershell, powershell::PROGRAM),
+            (Backend::Kdialog, kdialog::PROGRAM),
+            (Backend::Zenity, zenity::PROGRAM),
+            (Backend::Osascript, osascript::PROGRAM),
+        ]
+    } else if cfg!(target_os = "macos") {
         [
             (Backend::Osascript, osascript::PROGRAM),
             (Backend::Kdialog, kdialog::PROGRAM),
             (Backend::Zenity, zenity::PROGRAM),
+            (Backend::Powershell, powershell::PROGRAM),
         ]
     } else {
         [
             (Backend::Kdialog, kdialog::PROGRAM),
             (Backend::Zenity, zenity::PROGRAM),
             (Backend::Osascript, osascript::PROGRAM),
+            (Backend::Powershell, powershell::PROGRAM),
         ]
     };
     for (backend, program) in order {
@@ -61,13 +73,24 @@ pub(crate) fn argv(backend: Backend, request: &Request<'_>) -> Vec<String> {
         Backend::Kdialog => kdialog::argv(request),
         Backend::Zenity => zenity::argv(request),
         Backend::Osascript => osascript::argv(request),
+        Backend::Powershell => powershell::argv(request),
+    }
+}
+
+/// Environment variables to set for a run. Only the PowerShell
+/// backend takes its values this way (see its module docs); the
+/// other backends take everything as arguments.
+pub(crate) fn env(backend: Backend, request: &Request<'_>) -> Vec<(String, String)> {
+    match backend {
+        Backend::Powershell => powershell::env(request),
+        _ => Vec::new(),
     }
 }
 
 /// Interpret what a helper said on its way out. Backends using the
-/// shared convention go through [`crate::outcome`]; osascript's exit
-/// codes cannot tell a cancel from an error without stderr, so it
-/// classifies for itself.
+/// shared convention go through [`crate::outcome`]; osascript and
+/// PowerShell exit 1 for genuine errors too, so they classify for
+/// themselves.
 pub(crate) fn classify(
     backend: Backend,
     exit_code: Option<i32>,
@@ -76,6 +99,7 @@ pub(crate) fn classify(
 ) -> Outcome {
     match backend {
         Backend::Osascript => osascript::classify(exit_code, stdout, stderr),
+        Backend::Powershell => powershell::classify(exit_code, stdout, stderr),
         _ => crate::outcome::classify(exit_code, stdout),
     }
 }

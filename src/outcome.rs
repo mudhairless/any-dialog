@@ -2,9 +2,10 @@
 //!
 //! kdialog and zenity share one convention: exit 0 with the answer on
 //! stdout, exit 1 with empty stdout for cancel, anything else is a
-//! failure. That shared reading lives here. osascript breaks the
-//! convention (its exit 1 covers real errors too), so its classifier
-//! lives in its own backend file and reuses only the success case.
+//! failure. That shared reading lives here. osascript and
+//! PowerShell break the convention (their exit 1 covers real errors
+//! too), so their classifiers live in their own backend files and
+//! reuse only the success case.
 
 /// The result of interpreting a helper's exit status and stdout.
 #[derive(Debug, PartialEq, Eq)]
