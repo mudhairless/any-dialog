@@ -1,0 +1,85 @@
+name: macOS probe
+
+# Manually triggered validation of the osascript backend on a real
+# (hosted) Mac. This is not a CI gate: it never runs on push or pull
+# requests, and nothing else depends on it.
+#
+# What it checks, unattended: the raw dialog scripts the crate is
+# built on actually render and return the shapes the crate expects
+# (via `giving up after`, so nothing can block), with screenshots as
+# ground truth, plus one best effort attempt at a synthetic Escape
+# through the crate's own text dialog. It cannot prove a human
+# cancel click, typing, or list selection; those are covered by the
+# probe's --interactive mode on an interactive Mac session.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: osascript probe (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the probe
+        run: cargo build --example dialog_probe
+
+      - name: Scripted raw probes (dialogs time out on their own)
+        shell: bash
+        run: |
+          mkdir -p probe-out
+          sw_vers | tee probe-out/sw_vers.txt
+          ./target/debug/examples/dialog_probe --scripted > probe-out/scripted.txt 2>&1 &
+          probe_pid=$!
+          sleep 2
+          screencapture -x probe-out/text-dialog.png || true
+          sleep 3
+          screencapture -x probe-out/alert-dialog.png || true
+          wait $probe_pid || true
+          cat probe-out/scripted.txt
+
+      - name: One cliclick attempt at the crate cancel path
+        shell: bash
+        continue-on-error: true
+        run: |
+          brew install cliclick
+          ./target/debug/examples/dialog_probe --case text > probe-out/case-text.txt 2>&1 &
+          probe_pid=$!
+          sleep 2
+          screencapture -x probe-out/case-text-dialog.png || true
+          cliclick ke:esc || true
+          for _ in $(seq 1 15); do
+            kill -0 $probe_pid 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 $probe_pid 2>/dev/null; then
+            echo "cliclick attempt: dialog still open after 15s, killing the probe" >> probe-out/case-text.txt
+            kill -9 $probe_pid || true
+          fi
+          wait $probe_pid || true
+          cat probe-out/case-text.txt
+
+      - name: Summarize results
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## macOS probe results'
+            echo '```'
+            cat probe-out/sw_vers.txt probe-out/scripted.txt probe-out/case-text.txt 2>/dev/null
+            echo '```'
+            echo 'Screenshots are in the run artifacts (text-dialog.png, alert-dialog.png, case-text-dialog.png).'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload probe results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-probe-results
+          path: probe-out/
+          if-no-files-found: ignore
