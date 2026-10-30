@@ -158,11 +158,24 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
                 "--getexistingdirectory".to_string(),
             ];
             if let Some(start) = start {
-                args.push(super::path_text(start));
+                args.push(start_text(start));
             }
             args
         }
     }
+}
+
+/// The start path as kdialog must hear it: absolute. kdialog
+/// reads this argument as a URL, so a bare relative name goes
+/// through KDE's URI filtering and can come back as a web URL:
+/// the probe's save step was offered back as "http:
+/// probe-output.txt" and then refused on Save for its scheme.
+/// An absolute path is unambiguous. Falls back to the raw text
+/// if absolutizing fails.
+fn start_text(path: &std::path::Path) -> String {
+    std::path::absolute(path)
+        .map(|absolute| super::path_text(&absolute))
+        .unwrap_or_else(|_| super::path_text(path))
 }
 
 /// The file dialogs take their starting path and filter as
@@ -178,11 +191,7 @@ fn push_start_and_filter(
     if start.is_none() && filters.is_empty() {
         return;
     }
-    args.push(
-        start
-            .map(super::path_text)
-            .unwrap_or_else(|| ".".to_string()),
-    );
+    args.push(start.map(start_text).unwrap_or_else(|| ".".to_string()));
     if !filters.is_empty() {
         let entries: Vec<String> = filters
             .iter()
@@ -394,6 +403,27 @@ mod tests {
             argv(&request),
             args(&["--title", "Title", "--getsavefilename", ".", "*.txt|Text"])
         );
+    }
+
+    #[test]
+    fn save_file_argv_absolutizes_a_relative_start() {
+        // Regression test for the probe's step 21: kdialog reads
+        // the start argument as a URL, so "probe-output.txt" came
+        // back as an http URL and the save was refused. The argv
+        // must carry the absolutized path instead.
+        let request = Request::SaveFile {
+            title: "Title",
+            start: Some(std::path::Path::new("probe-output.txt")),
+            filters: &[],
+        };
+        let save_argv = argv(&request);
+        let start = save_argv.last().expect("a start argument");
+        assert!(
+            start.starts_with('/'),
+            "start should be absolute, got {start}"
+        );
+        assert!(start.ends_with("probe-output.txt"));
+        assert_ne!(start, "probe-output.txt");
     }
 
     #[test]
