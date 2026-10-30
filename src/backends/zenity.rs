@@ -70,6 +70,54 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
             label.to_string(),
             "--hide-text".to_string(),
         ],
+        Request::Choices {
+            title,
+            label,
+            choices,
+            current,
+        } => {
+            // The separator is a literal newline, so the answer
+            // arrives one pick per line like the other backends'
+            // multi answers, instead of zenity's default `|`.
+            let mut args = vec![
+                "--list".to_string(),
+                "--checklist".to_string(),
+                "--title".to_string(),
+                title.to_string(),
+                "--text".to_string(),
+                label.to_string(),
+                "--separator".to_string(),
+                "\n".to_string(),
+                "--column".to_string(),
+                "pick".to_string(),
+                "--column".to_string(),
+                "option".to_string(),
+            ];
+            for choice in choices {
+                args.push(
+                    if current.contains(choice) {
+                        "TRUE"
+                    } else {
+                        "FALSE"
+                    }
+                    .to_string(),
+                );
+                args.push((*choice).to_string());
+            }
+            args
+        }
+        Request::Color { title, initial } => {
+            let mut args = vec![
+                "--color-selection".to_string(),
+                "--title".to_string(),
+                title.to_string(),
+            ];
+            if let Some(initial) = initial {
+                args.push("--color".to_string());
+                args.push(initial.to_string());
+            }
+            args
+        }
         Request::Message {
             title,
             message,
@@ -202,6 +250,64 @@ mod tests {
                 args(&["--title", "Title", flag, "--text", "Message"])
             );
         }
+    }
+
+    #[test]
+    fn choices_argv_marks_current_and_separates_by_lines() {
+        let request = Request::Choices {
+            title: "Title",
+            label: "Label",
+            choices: &["a", "b"],
+            current: &["b"],
+        };
+        assert_eq!(
+            argv(&request),
+            args(&[
+                "--list",
+                "--checklist",
+                "--title",
+                "Title",
+                "--text",
+                "Label",
+                "--separator",
+                "\n",
+                "--column",
+                "pick",
+                "--column",
+                "option",
+                "FALSE",
+                "a",
+                "TRUE",
+                "b",
+            ])
+        );
+    }
+
+    #[test]
+    fn color_argv() {
+        let with_initial = Request::Color {
+            title: "Title",
+            initial: Some("#ff0080"),
+        };
+        assert_eq!(
+            argv(&with_initial),
+            args(&[
+                "--color-selection",
+                "--title",
+                "Title",
+                "--color",
+                "#ff0080"
+            ])
+        );
+
+        let without_initial = Request::Color {
+            title: "Title",
+            initial: None,
+        };
+        assert_eq!(
+            argv(&without_initial),
+            args(&["--color-selection", "--title", "Title"])
+        );
     }
 
     #[test]

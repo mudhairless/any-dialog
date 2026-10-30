@@ -34,6 +34,8 @@ pub(crate) const PROGRAM: &str = "powershell.exe";
 const TEXT_SCRIPT: &str = include_str!("powershell/text.ps1");
 const PASSWORD_SCRIPT: &str = include_str!("powershell/password.ps1");
 const CHOICE_SCRIPT: &str = include_str!("powershell/choice.ps1");
+const MULTIPLE_SCRIPT: &str = include_str!("powershell/multiple.ps1");
+const COLOR_SCRIPT: &str = include_str!("powershell/color.ps1");
 const MESSAGE_SCRIPT: &str = include_str!("powershell/message.ps1");
 const CONFIRM_SCRIPT: &str = include_str!("powershell/confirm.ps1");
 
@@ -45,6 +47,8 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
         Request::Text { .. } => TEXT_SCRIPT,
         Request::Password { .. } => PASSWORD_SCRIPT,
         Request::Choice { .. } => CHOICE_SCRIPT,
+        Request::Choices { .. } => MULTIPLE_SCRIPT,
+        Request::Color { .. } => COLOR_SCRIPT,
         Request::Message { .. } => MESSAGE_SCRIPT,
         Request::Confirm { .. } => CONFIRM_SCRIPT,
     };
@@ -94,6 +98,30 @@ pub(crate) fn env(request: &Request<'_>) -> Vec<(String, String)> {
             for (index, choice) in choices.iter().enumerate() {
                 push(&format!("ANYDIALOG_CHOICE_{index}"), choice);
             }
+        }
+        Request::Choices {
+            title,
+            label,
+            choices,
+            current,
+        } => {
+            push("ANYDIALOG_TITLE", title);
+            push("ANYDIALOG_LABEL", label);
+            push("ANYDIALOG_CHOICE_COUNT", &choices.len().to_string());
+            for (index, choice) in choices.iter().enumerate() {
+                push(&format!("ANYDIALOG_CHOICE_{index}"), choice);
+            }
+            let current = super::selected_many(choices, current);
+            push("ANYDIALOG_CURRENT_COUNT", &current.len().to_string());
+            for (index, choice) in current.iter().enumerate() {
+                push(&format!("ANYDIALOG_CURRENT_{index}"), choice);
+            }
+        }
+        // The color dialog has no caption, so the title does not
+        // travel; only the initial color does, defaulted to white
+        // like the osascript backend's fallback.
+        Request::Color { title: _, initial } => {
+            push("ANYDIALOG_INITIAL", initial.unwrap_or("#ffffff"));
         }
         Request::Password { title, label } => {
             push("ANYDIALOG_TITLE", title);
@@ -184,6 +212,22 @@ mod tests {
         assert_eq!(argv(&password)[5], PASSWORD_SCRIPT);
         assert!(argv(&password)[5].contains("UseSystemPasswordChar"));
 
+        let multiple = Request::Choices {
+            title: "Title",
+            label: "Label",
+            choices: &["a"],
+            current: &[],
+        };
+        assert_eq!(argv(&multiple)[5], MULTIPLE_SCRIPT);
+        assert!(argv(&multiple)[5].contains("CheckedListBox"));
+
+        let color = Request::Color {
+            title: "Title",
+            initial: None,
+        };
+        assert_eq!(argv(&color)[5], COLOR_SCRIPT);
+        assert!(argv(&color)[5].contains("ColorDialog"));
+
         let message = Request::Message {
             title: "Title",
             message: "Message",
@@ -232,6 +276,31 @@ mod tests {
                 pair("ANYDIALOG_CHOICE_1", "b"),
             ]
         );
+
+        let multiple = Request::Choices {
+            title: "Title",
+            label: "Label",
+            choices: &["a", "b"],
+            current: &["b", "missing"],
+        };
+        assert_eq!(
+            env(&multiple),
+            vec![
+                pair("ANYDIALOG_TITLE", "Title"),
+                pair("ANYDIALOG_LABEL", "Label"),
+                pair("ANYDIALOG_CHOICE_COUNT", "2"),
+                pair("ANYDIALOG_CHOICE_0", "a"),
+                pair("ANYDIALOG_CHOICE_1", "b"),
+                pair("ANYDIALOG_CURRENT_COUNT", "1"),
+                pair("ANYDIALOG_CURRENT_0", "b"),
+            ]
+        );
+
+        let color = Request::Color {
+            title: "Title",
+            initial: None,
+        };
+        assert_eq!(env(&color), vec![pair("ANYDIALOG_INITIAL", "#ffffff")]);
 
         let password = Request::Password {
             title: "Title",

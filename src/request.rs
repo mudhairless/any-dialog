@@ -31,6 +31,20 @@ pub(crate) enum Request<'a> {
         choices: &'a [&'a str],
         current: Option<&'a str>,
     },
+    Choices {
+        title: &'a str,
+        label: &'a str,
+        choices: &'a [&'a str],
+        current: &'a [&'a str],
+    },
+    /// A color picker. `initial` is a `#rrggbb` string when the
+    /// caller has one; backends that cannot take an initial color
+    /// ignore it. Whatever form a backend answers in, the public
+    /// API normalizes it to `#rrggbb`.
+    Color {
+        title: &'a str,
+        initial: Option<&'a str>,
+    },
     Message {
         title: &'a str,
         message: &'a str,

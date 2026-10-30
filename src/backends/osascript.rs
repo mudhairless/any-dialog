@@ -79,6 +79,57 @@ const CONFIRM_SCRIPT: &[&str] = &[
     "end run",
 ];
 
+/// The argument layout differs from the single-choice script:
+/// preselected items are variable in number here, so the data is
+/// title, prompt, a count, that many preselected items, then the
+/// choices themselves. The picks come back joined by linefeeds,
+/// one per line like the other backends' multi answers.
+const CHOICES_SCRIPT: &[&str] = &[
+    "on run argv",
+    "set n to (item 3 of argv) as integer",
+    "set defaults to {}",
+    "if n > 0 then set defaults to items 4 thru (3 + n) of argv",
+    "set choices to {}",
+    "if (count of argv) > (3 + n) then set choices to items (4 + n) thru -1 of argv",
+    "set picks to choose from list choices with title (item 1 of argv) with prompt (item 2 of argv) default items defaults with multiple selections allowed",
+    "if picks is false then error number -128",
+    "set AppleScript's text item delimiters to linefeed",
+    "return picks as string",
+    "end run",
+];
+
+/// `choose color` takes no title, so the request's title is
+/// dropped by this backend. It speaks in 16-bit RGB components:
+/// the arguments are the initial color's components (converted
+/// from `#rrggbb` in [`color_components`]), and the answer's
+/// components are converted back to hex by the script's helper
+/// handler. Cancelling raises -128, like the other choosers.
+const COLOR_SCRIPT: &[&str] = &[
+    "on hexpair(n)",
+    "set digits to \"0123456789abcdef\"",
+    "return (character ((n div 16) + 1) of digits) & (character ((n mod 16) + 1) of digits)",
+    "end hexpair",
+    "on run argv",
+    "set rgb to choose color default color {(item 1 of argv) as integer, (item 2 of argv) as integer, (item 3 of argv) as integer}",
+    "return \"#\" & hexpair((item 1 of rgb) div 257) & hexpair((item 2 of rgb) div 257) & hexpair((item 3 of rgb) div 257)",
+    "end run",
+];
+
+/// A `#rrggbb` initial color as the three 16-bit component
+/// strings `choose color` wants. Missing or unparsable input
+/// falls back to white.
+fn color_components(initial: Option<&str>) -> [String; 3] {
+    let rgb = initial
+        .and_then(|text| text.strip_prefix('#'))
+        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+        .unwrap_or(0xff_ffff);
+    [
+        (((rgb >> 16) & 0xff) * 257).to_string(),
+        (((rgb >> 8) & 0xff) * 257).to_string(),
+        ((rgb & 0xff) * 257).to_string(),
+    ]
+}
+
 /// Build the argument list for one request, excluding argv[0]: one
 /// `-e` per script line, then the values the script reads from argv.
 pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
@@ -130,6 +181,26 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
         Request::Confirm { title, message } => {
             (CONFIRM_SCRIPT, vec![title.to_string(), message.to_string()])
         }
+        Request::Choices {
+            title,
+            label,
+            choices,
+            current,
+        } => {
+            let defaults = super::selected_many(choices, current);
+            let mut data = vec![
+                title.to_string(),
+                label.to_string(),
+                defaults.len().to_string(),
+            ];
+            data.extend(defaults.iter().map(|choice| (*choice).to_string()));
+            data.extend(choices.iter().map(|choice| (*choice).to_string()));
+            (CHOICES_SCRIPT, data)
+        }
+        Request::Color { title: _, initial } => (
+            COLOR_SCRIPT,
+            color_components(initial).into_iter().collect(),
+        ),
     };
 
     let mut args = Vec::new();
@@ -286,6 +357,56 @@ mod tests {
                 "Title",
                 "Message",
             ])
+        );
+    }
+
+    #[test]
+    fn osascript_choices_argv_counts_the_preselected_items() {
+        let request = Request::Choices {
+            title: "Title",
+            label: "Label",
+            choices: &["a", "b", "c"],
+            current: &["c", "missing"],
+        };
+        let with_current = argv(&request);
+        assert_eq!(
+            &with_current[with_current.len() - 7..],
+            args(&["Title", "Label", "1", "c", "a", "b", "c"]).as_slice()
+        );
+
+        let none_current = Request::Choices {
+            title: "Title",
+            label: "Label",
+            choices: &["a"],
+            current: &[],
+        };
+        let argv = argv(&none_current);
+        assert_eq!(
+            &argv[argv.len() - 4..],
+            args(&["Title", "Label", "0", "a"]).as_slice()
+        );
+    }
+
+    #[test]
+    fn osascript_color_argv_converts_the_initial_color() {
+        let request = Request::Color {
+            title: "Title",
+            initial: Some("#ff0080"),
+        };
+        let with_initial = argv(&request);
+        assert_eq!(
+            &with_initial[with_initial.len() - 3..],
+            args(&["65535", "0", "32896"]).as_slice()
+        );
+
+        let no_initial = Request::Color {
+            title: "Title",
+            initial: None,
+        };
+        let argv = argv(&no_initial);
+        assert_eq!(
+            &argv[argv.len() - 3..],
+            args(&["65535", "65535", "65535"]).as_slice()
         );
     }
 

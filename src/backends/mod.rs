@@ -113,6 +113,27 @@ pub(crate) fn selected<'a>(choices: &[&'a str], current: Option<&'a str>) -> Opt
         .or_else(|| choices.first().copied())
 }
 
+/// The choices a multiple-choice dialog should start with: the
+/// requested ones that are actually among the choices.
+pub(crate) fn selected_many<'a>(choices: &[&'a str], current: &[&'a str]) -> Vec<&'a str> {
+    current
+        .iter()
+        .filter(|choice| choices.contains(choice))
+        .copied()
+        .collect()
+}
+
+/// Decode a multiple-choice answer into the picked choices.
+/// Every backend but kdialog prints one pick per line; kdialog's
+/// checklist prints index tags instead (see its file), so it
+/// decodes for itself.
+pub(crate) fn decode_choices(backend: Backend, text: &str, choices: &[&str]) -> Vec<String> {
+    match backend {
+        Backend::Kdialog => kdialog::decode_choices(text, choices),
+        _ => text.lines().map(|line| line.to_string()).collect(),
+    }
+}
+
 /// Find an executable on `PATH`.
 pub(crate) fn find_on_path(program: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;

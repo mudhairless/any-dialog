@@ -19,7 +19,7 @@ pub use error::Error;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use backends::{argv, classify, env};
+use backends::{argv, classify, decode_choices, env};
 use outcome::Outcome;
 use request::{Level, Request};
 
@@ -95,6 +95,51 @@ impl Dialogs {
             choices,
             current,
         })
+    }
+
+    /// Ask the user to pick any number of `choices`, starting with
+    /// `current` checked. `Ok(None)` means they cancelled;
+    /// `Ok(Some(vec![]))` means they confirmed with nothing picked.
+    pub fn prompt_choices(
+        &self,
+        title: &str,
+        label: &str,
+        choices: &[&str],
+        current: &[&str],
+    ) -> Result<Option<Vec<String>>, Error> {
+        let backend = self.backend.as_ref().map(|(backend, _)| *backend);
+        let request = Request::Choices {
+            title,
+            label,
+            choices,
+            current,
+        };
+        match self.run_completed(request)? {
+            // A run that answered implies a backend was there to
+            // answer, so the decode always has its backend.
+            Completed::Answered(Some(text)) => Ok(Some(decode_choices(
+                backend.expect("an answered run has a backend"),
+                &text,
+                choices,
+            ))),
+            Completed::Answered(None) => Ok(Some(Vec::new())),
+            Completed::Cancelled => Ok(None),
+        }
+    }
+
+    /// Ask the user to pick a color, starting from `initial` (a
+    /// `#rrggbb` string) where the backend supports one. The
+    /// answer is normalized to lowercase `#rrggbb`. `Ok(None)`
+    /// means the user cancelled.
+    pub fn prompt_color(
+        &self,
+        title: &str,
+        initial: Option<&str>,
+    ) -> Result<Option<String>, Error> {
+        match self.run(Request::Color { title, initial })? {
+            Some(raw) => Ok(Some(normalize_color(&raw))),
+            None => Ok(None),
+        }
     }
 
     /// Show an informational message with a single dismiss button.
@@ -185,6 +230,37 @@ enum Completed {
     Cancelled,
 }
 
+/// Normalize a helper's color answer to lowercase `#rrggbb`.
+/// kdialog, osascript, and PowerShell already answer in hex;
+/// zenity answers in CSS `rgb()` / `rgba()` form. Anything
+/// unrecognized passes through trimmed and lowercased, so a
+/// helper changing its answer format degrades visibly instead of
+/// silently corrupting the value.
+fn normalize_color(raw: &str) -> String {
+    let raw = raw.trim().to_lowercase();
+    let hex = raw.strip_prefix('#');
+    if hex.is_some_and(|hex| hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())) {
+        return raw;
+    }
+    let inner = raw
+        .strip_prefix("rgba(")
+        .or_else(|| raw.strip_prefix("rgb("))
+        .and_then(|rest| rest.strip_suffix(')'));
+    if let Some(inner) = inner {
+        let parts: Vec<&str> = inner.split(',').collect();
+        let channel = |index: usize| {
+            parts
+                .get(index)
+                .and_then(|part| part.trim().parse::<u32>().ok())
+                .map(|value| value.min(255))
+        };
+        if let (Some(r), Some(g), Some(b)) = (channel(0), channel(1), channel(2)) {
+            return format!("#{r:02x}{g:02x}{b:02x}");
+        }
+    }
+    raw
+}
+
 impl Default for Dialogs {
     fn default() -> Self {
         Dialogs::new()
@@ -194,6 +270,16 @@ impl Default for Dialogs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn color_answers_normalize_to_lowercase_hex() {
+        assert_eq!(normalize_color("#FF0080\n"), "#ff0080");
+        assert_eq!(normalize_color("rgb(255, 0, 128)"), "#ff0080");
+        assert_eq!(normalize_color("rgba(0, 128, 255, 0.5)"), "#0080ff");
+        // Unrecognized formats pass through, visibly degraded
+        // rather than silently rewritten.
+        assert_eq!(normalize_color("surprise"), "surprise");
+    }
 
     #[test]
     fn explicit_paths_choose_the_backend() {

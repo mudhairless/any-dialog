@@ -32,6 +32,8 @@ The prompt dialogs return `Ok(None)` when the user cancels:
 - `prompt_text`: ask for a line of text, with an optional initial value
 - `prompt_password`: ask for a password or other secret, masked while typed
 - `prompt_choice`: ask the user to pick one item from a list
+- `prompt_choices`: ask the user to pick any number of items from a list
+- `prompt_color`: ask the user to pick a color, returned as `#rrggbb`
 - `confirm`: ask a yes/no question, returning a bool
 - `show_info`, `show_warning`, `show_error`: show a message with a
   single dismiss button, at three levels of seriousness
