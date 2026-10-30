@@ -165,14 +165,20 @@ pub(crate) fn argv(request: &Request<'_>) -> Vec<String> {
     }
 }
 
-/// The start path as kdialog must hear it: absolute. kdialog
-/// reads this argument as a URL, so a bare relative name goes
-/// through KDE's URI filtering and can come back as a web URL:
-/// the probe's save step was offered back as "http:
-/// probe-output.txt" and then refused on Save for its scheme.
-/// An absolute path is unambiguous. Falls back to the raw text
-/// if absolutizing fails.
+/// The start path as kdialog must hear it: absolute if it was
+/// relative. kdialog reads this argument as a URL, so a bare
+/// relative name goes through KDE's URI filtering and can come
+/// back as a web URL: the probe's save step was offered back as
+/// "http: probe-output.txt" and then refused on Save for its
+/// scheme. A rooted path is already unambiguous to that parser
+/// and passes through as-is (which also keeps the Unix path
+/// fixtures in the tests valid on Windows, where absolutizing
+/// another OS's absolute path would rewrite it). Falls back to
+/// the raw text if absolutizing fails.
 fn start_text(path: &std::path::Path) -> String {
+    if path.is_absolute() || path.has_root() {
+        return super::path_text(path);
+    }
     std::path::absolute(path)
         .map(|absolute| super::path_text(&absolute))
         .unwrap_or_else(|_| super::path_text(path))
