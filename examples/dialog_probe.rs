@@ -1,11 +1,17 @@
-//! A probe harness for validating the osascript backend on a real
-//! Mac. Not part of the crate's API and not shipped anywhere; it
-//! exists so the macOS assumptions in `src/backends/osascript.rs`
-//! can be checked on hardware neither maintainer machine is.
+//! A probe harness for validating the backends on real
+//! hardware. Not part of the crate's API and not shipped
+//! anywhere; it exists so the platform assumptions in the
+//! backends can be checked where they actually run: the
+//! osascript assumptions need a real Mac, and the PowerShell
+//! backend gets the same human check on a real Windows box
+//! (the maintainer's machine dual-boots). The `--case` and
+//! `--interactive` modes drive the crate itself, so they work
+//! on any OS and always exercise whichever backend the crate
+//! probes there.
 //!
 //! Modes:
 //!
-//! - `--scripted` (the default): what CI runs unattended. Raw
+//! - `--scripted` (the default, macOS only): what CI runs unattended. Raw
 //!   osascript probes use `giving up after` so nothing can block:
 //!   they confirm the result shapes the crate's scripts rely on.
 //!   The list, color, and file dialogs are skipped here, because
@@ -25,10 +31,12 @@
 //! `Result` (crate cases), so a run log is the validation report.
 
 use std::io::Write;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use any_dialog::Dialogs;
 
+#[cfg(target_os = "macos")]
 const RAW_TEXT_SCRIPT: &[&str] = &[
     "on run argv",
     "set answer to display dialog (item 2 of argv) default answer (item 3 of argv) with title (item 1 of argv) giving up after 3",
@@ -36,6 +44,7 @@ const RAW_TEXT_SCRIPT: &[&str] = &[
     "end run",
 ];
 
+#[cfg(target_os = "macos")]
 const RAW_ALERT_SCRIPT: &[&str] = &[
     "on run argv",
     "display alert (item 1 of argv) message (item 2 of argv) giving up after 3",
@@ -43,6 +52,7 @@ const RAW_ALERT_SCRIPT: &[&str] = &[
     "end run",
 ];
 
+#[cfg(target_os = "macos")]
 const RAW_MESSAGE_SCRIPT: &[&str] = &[
     "on run argv",
     "display dialog (item 2 of argv) buttons {\"OK\"} default button \"OK\" with title (item 1 of argv) with icon (item 3 of argv as integer) giving up after 3",
@@ -54,6 +64,7 @@ const RAW_MESSAGE_SCRIPT: &[&str] = &[
 // so the script prints "no". That is a property of the timeout,
 // not of the crate's script, which has no giving-up clause and
 // can only return through a real click or a cancel.
+#[cfg(target_os = "macos")]
 const RAW_CONFIRM_SCRIPT: &[&str] = &[
     "on run argv",
     "set answer to display dialog (item 2 of argv) buttons {\"No\", \"Yes\"} default button \"Yes\" with title (item 1 of argv) giving up after 3",
@@ -77,53 +88,68 @@ fn main() {
 fn scripted() {
     let dialogs = Dialogs::new();
     println!("PROBE scripted mode");
-    println!("CRATE backend available: {}", dialogs.available());
-
-    raw_case(
-        "text (giving up after 3)",
-        RAW_TEXT_SCRIPT,
-        &[
-            "any-dialog probe",
-            "Scripted text probe: this dialog dismisses itself",
-            "prefilled",
-        ],
-    );
-    raw_case(
-        "alert (giving up after 3)",
-        RAW_ALERT_SCRIPT,
-        &[
-            "any-dialog probe",
-            "Scripted alert probe: this alert dismisses itself",
-        ],
-    );
-    // Message and confirm run after text and alert on purpose: the
-    // CI workflow screenshots at fixed times that frame the first
-    // two dialogs, and adding cases must not move them.
-    raw_case(
-        "message (giving up after 3)",
-        RAW_MESSAGE_SCRIPT,
-        &[
-            "any-dialog probe",
-            "Scripted message probe: this dialog dismisses itself",
-            "1",
-        ],
-    );
-    raw_case(
-        "confirm (giving up after 3)",
-        RAW_CONFIRM_SCRIPT,
-        &[
-            "any-dialog probe",
-            "Scripted confirm probe: this dialog dismisses itself",
-        ],
-    );
     println!(
-        "RAW CASE choice, multi, color, open, save, folder: SKIPPED in scripted mode (the choose commands have no giving up after; covered by --case and --interactive)"
+        "CRATE backend available: {} ({:?})",
+        dialogs.available(),
+        dialogs.backend()
     );
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        println!(
+            "RAW CASES: macOS only (the raw probes drive osascript directly); use --case or --interactive on this OS"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        raw_case(
+            "text (giving up after 3)",
+            RAW_TEXT_SCRIPT,
+            &[
+                "any-dialog probe",
+                "Scripted text probe: this dialog dismisses itself",
+                "prefilled",
+            ],
+        );
+        raw_case(
+            "alert (giving up after 3)",
+            RAW_ALERT_SCRIPT,
+            &[
+                "any-dialog probe",
+                "Scripted alert probe: this alert dismisses itself",
+            ],
+        );
+        // Message and confirm run after text and alert on purpose: the
+        // CI workflow screenshots at fixed times that frame the first
+        // two dialogs, and adding cases must not move them.
+        raw_case(
+            "message (giving up after 3)",
+            RAW_MESSAGE_SCRIPT,
+            &[
+                "any-dialog probe",
+                "Scripted message probe: this dialog dismisses itself",
+                "1",
+            ],
+        );
+        raw_case(
+            "confirm (giving up after 3)",
+            RAW_CONFIRM_SCRIPT,
+            &[
+                "any-dialog probe",
+                "Scripted confirm probe: this dialog dismisses itself",
+            ],
+        );
+        println!(
+            "RAW CASE choice, multi, color, open, save, folder: SKIPPED in scripted mode (the choose commands have no giving up after; covered by --case and --interactive)"
+        );
+    }
 }
 
 /// Run one raw script the same way the crate runs its scripts (one
 /// `-e` per line, values as run-handler arguments) and print what
 /// came back, verbatim.
+#[cfg(target_os = "macos")]
 fn raw_case(name: &str, script: &[&str], data: &[&str]) {
     let mut args: Vec<String> = Vec::new();
     for line in script {
@@ -146,6 +172,7 @@ fn raw_case(name: &str, script: &[&str], data: &[&str]) {
 
 fn crate_case(case: &str) {
     let dialogs = Dialogs::new();
+    println!("CASE backend: {:?}", dialogs.backend());
     match case {
         "text" => {
             let result = dialogs.prompt_text(
@@ -234,7 +261,11 @@ fn crate_case(case: &str) {
 fn interactive() {
     let dialogs = Dialogs::new();
     println!("INTERACTIVE PROBE: work through the dialogs as they appear.");
-    println!("backend available: {}", dialogs.available());
+    println!(
+        "backend available: {} ({:?})",
+        dialogs.available(),
+        dialogs.backend()
+    );
 
     step("1/24 text, OK path: type anything, then click OK");
     let result = dialogs.prompt_text(
@@ -367,7 +398,7 @@ fn interactive() {
     let result = dialogs.prompt_folder("any-dialog probe", None);
     println!("CASE folder-cancel => {result:?} (want Ok(None))");
 
-    println!("INTERACTIVE PROBE done. Save this output with your macOS version.");
+    println!("INTERACTIVE PROBE done. Save this output with your OS and version.");
 }
 
 fn step(text: &str) {

@@ -61,6 +61,13 @@ impl Dialogs {
         self.backend.is_some()
     }
 
+    /// Which backend this handle drives, if any. Mostly useful
+    /// for logging and diagnostics: the dialogs themselves do
+    /// not depend on which helper renders them.
+    pub fn backend(&self) -> Option<Backend> {
+        self.backend.as_ref().map(|(backend, _)| *backend)
+    }
+
     /// Ask for a line of text. `Ok(None)` means the user cancelled.
     pub fn prompt_text(
         &self,
@@ -372,5 +379,10 @@ mod tests {
             )
             .available()
         );
+        assert_eq!(
+            Dialogs::with_paths(None, Some(PathBuf::from("/bin/zenity")), None, None).backend(),
+            Some(Backend::Zenity)
+        );
+        assert_eq!(Dialogs::with_paths(None, None, None, None).backend(), None);
     }
 }
