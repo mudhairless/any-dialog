@@ -21,16 +21,15 @@ fn main() -> Result<(), any_dialog::Error> {
     }
 
     // Extensions are bare, without a dot or a glob: "rs", not
-    // "*.rs". Each filter is one named group in the picker.
+    // "*.rs". Each filter is one named group in the picker. The
+    // two constructions shown are interchangeable: a struct
+    // literal, and the builder.
     let filters = [
         FileFilter {
             name: "Rust source",
             extensions: &["rs", "toml"],
         },
-        FileFilter {
-            name: "Text and markdown",
-            extensions: &["txt", "md"],
-        },
+        FileFilter::builder("Text and markdown").extensions(&["txt", "md"]),
     ];
 
     match dialogs.prompt_open_file("Pick one file", None, &filters)? {

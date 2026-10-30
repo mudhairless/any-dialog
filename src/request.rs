@@ -25,6 +25,45 @@ pub struct FileFilter<'a> {
     pub extensions: &'a [&'a str],
 }
 
+impl<'a> FileFilter<'a> {
+    /// Start building a filter from its display name, as an
+    /// alternative to the struct literal. Both constructions
+    /// produce the same value:
+    ///
+    /// ```
+    /// use any_dialog::FileFilter;
+    ///
+    /// let filter = FileFilter::builder("Images").extensions(&["png", "jpg"]);
+    /// assert_eq!(
+    ///     filter,
+    ///     FileFilter { name: "Images", extensions: &["png", "jpg"] }
+    /// );
+    /// ```
+    pub fn builder(name: &'a str) -> FileFilterBuilder<'a> {
+        FileFilterBuilder { name }
+    }
+}
+
+/// Builds a [`FileFilter`] from its display name, obtained from
+/// [`FileFilter::builder`]. The only way out is
+/// [`extensions`](FileFilterBuilder::extensions), so a builder
+/// cannot be finished into a filter that has no extensions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileFilterBuilder<'a> {
+    name: &'a str,
+}
+
+impl<'a> FileFilterBuilder<'a> {
+    /// Finish the filter with its extensions: bare names,
+    /// without dots or wildcards.
+    pub fn extensions(self, extensions: &'a [&'a str]) -> FileFilter<'a> {
+        FileFilter {
+            name: self.name,
+            extensions,
+        }
+    }
+}
+
 /// One request, independent of which backend will render it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Request<'a> {
@@ -93,4 +132,20 @@ pub(crate) enum Request<'a> {
         title: &'a str,
         start: Option<&'a std::path::Path>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FileFilter;
+
+    #[test]
+    fn builder_matches_the_struct_literal() {
+        assert_eq!(
+            FileFilter::builder("Images").extensions(&["png", "jpg"]),
+            FileFilter {
+                name: "Images",
+                extensions: &["png", "jpg"]
+            }
+        );
+    }
 }

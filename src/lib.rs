@@ -37,7 +37,7 @@ mod request;
 
 pub use backends::Backend;
 pub use error::Error;
-pub use request::FileFilter;
+pub use request::{FileFilter, FileFilterBuilder};
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
