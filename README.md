@@ -19,9 +19,8 @@ On macOS and Windows the order flips: the OS's own bundled helper
 (`osascript` or `powershell`) goes first there, since it is part of
 the OS, with the other tools as fallbacks.
 
-The expanded feature set in ROADMAP.md is version 1.0, the first full
-release. Version 0.1.0 was published early to reserve the crate name;
-until 1.0 lands, this README describes the dialogs the code has today.
+Version 1.0 is the first full release. Version 0.1.0 was published
+early to reserve the crate name.
 
 If no helper is installed, calls return `Error::NoBackend`.
 
@@ -51,7 +50,7 @@ use any_dialog::Dialogs;
 fn main() -> Result<(), any_dialog::Error> {
     let dialogs = Dialogs::new();
     if !dialogs.available() {
-        eprintln!("install kdialog or zenity to enable dialogs");
+        eprintln!("no dialog backend available on this system");
         return Ok(());
     }
 

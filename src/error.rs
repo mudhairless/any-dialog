@@ -7,7 +7,8 @@ use std::process::ExitStatus;
 /// Everything that can go wrong while showing a dialog.
 #[derive(Debug)]
 pub enum Error {
-    /// Neither `kdialog` nor `zenity` was found.
+    /// None of the backends (`kdialog`, `zenity`, `osascript`,
+    /// `powershell`) was found on this system.
     NoBackend,
     /// The helper could not be started.
     Spawn {
@@ -25,7 +26,10 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::NoBackend => {
-                write!(f, "no dialog backend available (install kdialog or zenity)")
+                write!(
+                    f,
+                    "no dialog backend available (none of kdialog, zenity, osascript, or powershell was found)"
+                )
             }
             Error::Spawn { program, source } => {
                 write!(f, "could not run {}: {source}", program.display())
