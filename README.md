@@ -1,3 +1,5 @@
+[![CI](https://github.com/mudhairless/any-dialog/actions/workflows/ci.yml/badge.svg)](https://github.com/mudhairless/any-dialog/actions/workflows/ci.yml)
+
 # any-dialog
 
 Simple desktop dialogs via whatever dialog tool the system already has.
