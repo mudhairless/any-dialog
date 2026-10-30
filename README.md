@@ -26,6 +26,10 @@ early to reserve the crate name.
 
 If no helper is installed, calls return `Error::NoBackend`.
 
+API documentation lives on [docs.rs](https://docs.rs/any-dialog),
+with runnable examples in this repository's `examples/` directory.
+The minimum supported Rust version is 1.85.
+
 ## What it does
 
 The prompt dialogs return `Ok(None)` when the user cancels:

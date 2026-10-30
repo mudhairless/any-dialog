@@ -1,12 +1,34 @@
-//! any-dialog: Minimal desktop dialogs over `kdialog`, `zenity`,
-//! `osascript`, or `powershell`.
+//! Simple desktop dialogs via whatever dialog helper the system
+//! already has: `kdialog` or `zenity` on Linux, `osascript` on
+//! macOS, or PowerShell on Windows. The crate links no GUI
+//! toolkit, has zero dependencies, and uses only the standard
+//! library.
 //!
-//! This module is deliberately self-contained: it uses only the standard
-//! library, knows nothing about the rest of the application, and can be
-//! lifted into another project unchanged.
+//! [`Dialogs::new`] probes `PATH` for a helper, preferring the
+//! operating system's own bundled tool on macOS and Windows, and
+//! every method on the handle renders through the helper it
+//! found. If no helper exists, calls fail with
+//! [`Error::NoBackend`]; check [`Dialogs::available`] first if
+//! that matters.
 //!
-//! Every call blocks until the user answers, so callers should run them on a
-//! worker thread rather than on a UI or event-loop thread.
+//! Prompt methods return `Ok(None)` when the user cancels, so a
+//! cancel is a value to handle, not an error:
+//!
+//! ```no_run
+//! use any_dialog::Dialogs;
+//!
+//! fn main() -> Result<(), any_dialog::Error> {
+//!     let dialogs = Dialogs::new();
+//!     if let Some(name) = dialogs.prompt_text("Example", "Your name:", None)? {
+//!         println!("hello, {name}");
+//!     }
+//!     Ok(())
+//! }
+//! ```
+//!
+//! Every call blocks until the user answers, so callers should
+//! run them on a worker thread rather than on a UI or event-loop
+//! thread.
 
 mod backends;
 mod error;

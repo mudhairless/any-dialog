@@ -7,7 +7,9 @@ license = "MIT"
 description = "Simple dialogs via kdialog, zenity, osascript, or PowerShell. Zero dependencies."
 repository = "https://github.com/mudhairless/any-dialog"
 homepage = "https://github.com/mudhairless/any-dialog"
-documentation = "https://github.com/mudhairless/any-dialog"
+documentation = "https://docs.rs/any-dialog"
+keywords = ["dialog", "gui", "zenity", "kdialog", "prompt"]
+categories = ["gui"]
 
 [dependencies]
 
