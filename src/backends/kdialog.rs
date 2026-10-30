@@ -418,11 +418,9 @@ mod tests {
         };
         let save_argv = argv(&request);
         let start = save_argv.last().expect("a start argument");
-        assert!(
-            start.starts_with('/'),
-            "start should be absolute, got {start}"
-        );
-        assert!(start.ends_with("probe-output.txt"));
+        let absolutized = std::path::absolute(std::path::Path::new("probe-output.txt"))
+            .expect("the start absolutizes");
+        assert_eq!(start, &super::super::path_text(&absolutized));
         assert_ne!(start, "probe-output.txt");
     }
 
