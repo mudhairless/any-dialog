@@ -26,11 +26,17 @@
 //!   OK, cancel, selection, and hostile text (quotes, commas,
 //!   non-ASCII), printing the expected and actual result per case.
 //!
+//! `--backend kdialog|zenity|osascript|powershell` can precede
+//! any mode to force that backend instead of the probed one, so
+//! a machine with several helpers installed can verify each in
+//! turn.
+//!
 //! Every case prints one structured line: the case name, then the
 //! exit code, stdout, and stderr (raw probes) or the crate's mapped
 //! `Result` (crate cases), so a run log is the validation report.
 
 use std::io::Write;
+use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
@@ -74,19 +80,49 @@ const RAW_CONFIRM_SCRIPT: &[&str] = &[
 ];
 
 fn main() {
-    let mode = std::env::args().nth(1);
-    match mode.as_deref() {
-        Some("--interactive") => interactive(),
-        Some("--case") => {
-            let case = std::env::args().nth(2).unwrap_or_default();
-            crate_case(&case);
+    // --backend <name> forces one backend (through
+    // Dialogs::with_paths with the bare program name, resolved
+    // on PATH), so a machine with several helpers installed can
+    // verify each one in turn: a KDE box can run the checklist
+    // once through kdialog and once through zenity.
+    let mut backend: Option<String> = None;
+    let mut mode: Vec<String> = Vec::new();
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--backend" {
+            backend = args.next();
+        } else {
+            mode.push(arg);
         }
-        _ => scripted(),
+    }
+    let dialogs = match backend.as_deref() {
+        None => Dialogs::new(),
+        Some("kdialog") => Dialogs::with_paths(Some(PathBuf::from("kdialog")), None, None, None),
+        Some("zenity") => Dialogs::with_paths(None, Some(PathBuf::from("zenity")), None, None),
+        Some("osascript") => {
+            Dialogs::with_paths(None, None, Some(PathBuf::from("osascript")), None)
+        }
+        Some("powershell") => {
+            Dialogs::with_paths(None, None, None, Some(PathBuf::from("powershell.exe")))
+        }
+        Some(other) => {
+            eprintln!(
+                "unknown backend {other:?}; expected kdialog, zenity, osascript, or powershell"
+            );
+            std::process::exit(2);
+        }
+    };
+    match mode.first().map(String::as_str) {
+        Some("--interactive") => interactive(&dialogs),
+        Some("--case") => {
+            let case = mode.get(1).map(String::as_str).unwrap_or_default();
+            crate_case(&dialogs, case);
+        }
+        _ => scripted(&dialogs),
     }
 }
 
-fn scripted() {
-    let dialogs = Dialogs::new();
+fn scripted(dialogs: &Dialogs) {
     println!("PROBE scripted mode");
     println!(
         "CRATE backend available: {} ({:?})",
@@ -170,8 +206,7 @@ fn raw_case(name: &str, script: &[&str], data: &[&str]) {
     let _ = std::io::stdout().flush();
 }
 
-fn crate_case(case: &str) {
-    let dialogs = Dialogs::new();
+fn crate_case(dialogs: &Dialogs, case: &str) {
     println!("CASE backend: {:?}", dialogs.backend());
     match case {
         "text" => {
@@ -258,8 +293,7 @@ fn crate_case(case: &str) {
     let _ = std::io::stdout().flush();
 }
 
-fn interactive() {
-    let dialogs = Dialogs::new();
+fn interactive(dialogs: &Dialogs) {
     println!("INTERACTIVE PROBE: work through the dialogs as they appear.");
     println!(
         "backend available: {} ({:?})",
