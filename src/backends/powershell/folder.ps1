@@ -15,8 +15,11 @@ try {
     $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
     $dialog.Description = $env:ANYDIALOG_TITLE
     $dialog.ShowNewFolderButton = $true
-    if ($env:ANYDIALOG_START -ne '' -and (Test-Path $env:ANYDIALOG_START -PathType Container)) {
-        $dialog.SelectedPath = $env:ANYDIALOG_START
+    # Same $null-for-empty rule as open.ps1: "no start" is
+    # $null here, not ''.
+    $startPath = $env:ANYDIALOG_START
+    if (-not [string]::IsNullOrEmpty($startPath) -and (Test-Path $startPath -PathType Container)) {
+        $dialog.SelectedPath = $startPath
     }
 
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {

@@ -17,12 +17,16 @@ try {
     $dialog.Title = $env:ANYDIALOG_TITLE
     $dialog.Filter = $env:ANYDIALOG_FILTER
     $dialog.Multiselect = $env:ANYDIALOG_MULTIPLE -eq '1'
-    if ($env:ANYDIALOG_START -ne '') {
-        if (Test-Path $env:ANYDIALOG_START -PathType Container) {
-            $dialog.InitialDirectory = $env:ANYDIALOG_START
+    # An env var set to an empty string reads back as $null
+    # through the $env: drive, so "no start" arrives as $null,
+    # not ''. Test for both, or Test-Path gets a null path.
+    $startPath = $env:ANYDIALOG_START
+    if (-not [string]::IsNullOrEmpty($startPath)) {
+        if (Test-Path $startPath -PathType Container) {
+            $dialog.InitialDirectory = $startPath
         } else {
-            $dialog.InitialDirectory = [System.IO.Path]::GetDirectoryName($env:ANYDIALOG_START)
-            $dialog.FileName = [System.IO.Path]::GetFileName($env:ANYDIALOG_START)
+            $dialog.InitialDirectory = [System.IO.Path]::GetDirectoryName($startPath)
+            $dialog.FileName = [System.IO.Path]::GetFileName($startPath)
         }
     }
 
