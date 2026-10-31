@@ -1,0 +1,108 @@
+name: Bug report
+description: Report a dialog that misbehaved, failed, or returned the wrong result.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. any-dialog drives
+        four different helper programs across three operating
+        systems, so the version, backend, and OS fields below are
+        what make a report actionable. One check that helps a lot:
+        the repository's probe example, `cargo run --example
+        dialog_probe -- --interactive` (or `--case <kind>` for one
+        dialog), shows whether the problem reproduces outside your
+        own program.
+  - type: input
+    id: crate-version
+    attributes:
+      label: any-dialog version
+      description: The version from your Cargo.toml or Cargo.lock, for example 1.0.0.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      description: Which helper showed the dialog. `Dialogs::backend()` returns it, and the probe prints it as its backend line.
+      options:
+        - kdialog (Linux)
+        - zenity (Linux)
+        - osascript (macOS)
+        - PowerShell (Windows)
+        - Not sure
+      default: 4
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: "Windows 11 24H2, Ubuntu 24.04 with KDE Plasma, macOS 15.1"
+    validations:
+      required: true
+  - type: input
+    id: helper-version
+    attributes:
+      label: Helper version
+      description: "From `kdialog --version` or `zenity --version`. On Windows, the output of `$PSVersionTable.PSVersion` in powershell.exe. On macOS, leave this blank; the macOS version above covers it."
+    validations:
+      required: false
+  - type: dropdown
+    id: dialog-kind
+    attributes:
+      label: Dialog kind
+      options:
+        - Message (info, warning, or error)
+        - Confirm (yes/no)
+        - Text entry
+        - Password entry
+        - Single choice
+        - Multiple choice
+        - Color picker
+        - File open (single)
+        - File open (multiple)
+        - File save
+        - Folder picker
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: "If a call returned an error, paste its Debug output (it looks like `Err(Exit { status: ... })`). If the dialog itself looked or behaved wrong, describe what it showed."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: The smallest code that reproduces the problem. If the probe example shows it too (see the note at the top), naming the probe case here counts as a reproduction.
+      render: rust
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      description: Tick every statement that is true.
+      options:
+        - label: The problem also happens with the dialog_probe example.
+        - label: The same kind of dialog works in other programs on this machine.
+        - label: I am running in an SSH, remote desktop, or other non-local session.
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: "Anything unusual about the environment: a managed or locked-down machine, Windows Constrained Language Mode, multiple monitors, a non-English locale, and so on."
+    validations:
+      required: false

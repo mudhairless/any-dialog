@@ -8,6 +8,50 @@ Simple desktop dialogs via whatever dialog tool the system already has.
 program instead, so it has zero dependencies and uses only the Rust
 standard library.
 
+## Quick start
+
+Add the crate to your project:
+
+```sh
+cargo add any-dialog
+```
+
+or by hand in `Cargo.toml`:
+
+```toml
+[dependencies]
+any-dialog = "1"
+```
+
+One thing to know first: the crate drives a helper program, so
+one has to exist on the machine. On macOS and Windows the helper
+is part of the OS. On Linux the user needs `kdialog` or `zenity`
+installed, which most KDE and GNOME systems already have; if
+neither is present, calls return `Error::NoBackend`.
+
+```rust
+use any_dialog::Dialogs;
+
+fn main() -> Result<(), any_dialog::Error> {
+    let dialogs = Dialogs::new();
+    if !dialogs.available() {
+        eprintln!("no dialog backend available on this system");
+        return Ok(());
+    }
+
+    // Ok(None) means the user cancelled. It is not an error.
+    if let Some(name) = dialogs.prompt_text("Example", "Your name:", None)? {
+        println!("hello, {name}");
+    }
+
+    Ok(())
+}
+```
+
+The full dialog list is under [What it does](#what-it-does)
+below, and the `examples/` directory has runnable programs,
+including one for the file dialogs and their filters.
+
 ## Backends
 
 Probed in order:
