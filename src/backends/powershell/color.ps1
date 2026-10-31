@@ -17,7 +17,12 @@ try {
 
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $color = $dialog.Color
-        [Console]::Out.WriteLine('#{0:x2}{1:x2}{2:x2}' -f $color.R, $color.G, $color.B)
+        # The format must be its own statement: inside a
+        # method call, the commas of the -f argument list would
+        # split into separate WriteLine arguments and the
+        # format would run short of arguments.
+        $hex = '#{0:x2}{1:x2}{2:x2}' -f $color.R, $color.G, $color.B
+        [Console]::Out.WriteLine($hex)
         exit 0
     }
     exit 1
