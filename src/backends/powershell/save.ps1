@@ -16,12 +16,15 @@ try {
     $dialog = New-Object System.Windows.Forms.SaveFileDialog
     $dialog.Title = $env:ANYDIALOG_TITLE
     $dialog.Filter = $env:ANYDIALOG_FILTER
-    if ($env:ANYDIALOG_START -ne '') {
-        if (Test-Path $env:ANYDIALOG_START -PathType Container) {
-            $dialog.InitialDirectory = $env:ANYDIALOG_START
+    # Same $null-for-empty rule as open.ps1: "no start"
+    # arrives as $null through the $env: drive, not ''.
+    $startPath = $env:ANYDIALOG_START
+    if (-not [string]::IsNullOrEmpty($startPath)) {
+        if (Test-Path $startPath -PathType Container) {
+            $dialog.InitialDirectory = $startPath
         } else {
-            $dialog.InitialDirectory = [System.IO.Path]::GetDirectoryName($env:ANYDIALOG_START)
-            $dialog.FileName = [System.IO.Path]::GetFileName($env:ANYDIALOG_START)
+            $dialog.InitialDirectory = [System.IO.Path]::GetDirectoryName($startPath)
+            $dialog.FileName = [System.IO.Path]::GetFileName($startPath)
         }
     }
 
