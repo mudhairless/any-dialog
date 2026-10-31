@@ -94,20 +94,32 @@ The prompt dialogs return `Ok(None)` when the user cancels:
 
 ## Usage
 
+The [`basic` example](examples/basic.rs), runnable with
+`cargo run --example basic`, shows the normal pattern: check
+for a backend, prompt, and treat a cancel as the `None` it is
+rather than as an error.
+
 ```rust
 use any_dialog::Dialogs;
 
 fn main() -> Result<(), any_dialog::Error> {
     let dialogs = Dialogs::new();
     if !dialogs.available() {
-        eprintln!("no dialog backend available on this system");
+        eprintln!("no dialog backend on this system (on Linux, install kdialog or zenity)");
         return Ok(());
     }
 
-    if let Some(name) = dialogs.prompt_text("Example", "Your name:", None)? {
-        println!("hello, {name}");
-    }
+    let Some(name) = dialogs.prompt_text("any-dialog basic example", "Your name:", None)? else {
+        println!("cancelled at the name prompt");
+        return Ok(());
+    };
+    println!("hello, {name}");
 
+    if dialogs.confirm("any-dialog basic example", "Show an info message?")? {
+        dialogs.show_info("any-dialog basic example", "That was a confirm.")?;
+    } else {
+        println!("no message wanted; done");
+    }
     Ok(())
 }
 ```
