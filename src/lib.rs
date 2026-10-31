@@ -298,6 +298,21 @@ impl Dialogs {
         for (name, value) in env(*backend, &request) {
             command.env(name, value);
         }
+        // powershell.exe is a console application. Spawned from
+        // a GUI process (one with no console of its own, such as
+        // an Explorer-launched exe), Windows would give it a
+        // console window of its own, visible next to the dialog.
+        // CREATE_NO_WINDOW suppresses that; the child's stdio is
+        // piped, so it loses nothing it uses. Console parents
+        // (terminals, the probe) are unaffected in practice: the
+        // child simply does not share their console either, and
+        // it never writes to one.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
 
         let output = command.output().map_err(|source| Error::Spawn {
             program: program.clone(),
